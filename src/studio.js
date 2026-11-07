@@ -32,7 +32,7 @@ function el(tag, attrs = {}, children = []) {
     if (k === "class") n.className = v;
     else if (k === "text") n.textContent = v;
     else if (k === "html") n.innerHTML = v; // only our own SVG markup
-    else if (k === "style" && typeof v === "object") Object.assign(n.style, v);
+    else if (k === "style" && typeof v === "object") for (const [sk, sv] of Object.entries(v)) sk.startsWith("--") ? n.style.setProperty(sk, sv) : (n.style[sk] = sv);
     else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
     else n.setAttribute(k, v === true ? "" : v);
   }
