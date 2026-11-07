@@ -45,10 +45,15 @@
  * @property {string[]} [apps]      apps where this pet is suggested first
  */
 
+import { SPECIES, SPECIES_IDS, petArt } from "./pet-art.js";
+export { SPECIES, SPECIES_IDS };
+
 export const KINDS = ["text", "editable", "image", "frame"];
 export const KIND_LABEL = { text: "Text", editable: "Editable text", image: "Images", frame: "Figma frames" };
 export const ACTION_LABEL = { answer: "Show answer", replace: "Rewrite (approve first)", comment: "Comment (approve first)" };
 export const STICKER_COLORS = ["#FFB86B", "#9ED8C5", "#C9B8FF", "#FFD86B", "#F4A6B8", "#A9C1F2"];
+/** Pet colours: the characters' own palette. */
+export const PET_COLORS = ["#F8BE8E", "#A8DCC1", "#CBBEF5", "#F3DE85", "#F6B3C6", "#ABC4F0", "#F8C3A0"];
 
 const MAIL = ["mail.google.com", "outlook.live.com", "outlook.office.com", "app.slack.com"];
 
@@ -102,10 +107,10 @@ function t(id, name, label, color, shape, accepts, action, prompt, boost) {
 }
 
 export const DEFAULT_PETS = [
-  { id: "scout", name: "Scout", role: "Research", color: "#9ED8C5", skillIds: ["summarize", "explain", "cite", "dates", "translate"], canRead: { text: true, images: true }, apps: ["wiki", "web"] },
-  { id: "quill", name: "Quill", role: "Writing", color: "#FFB86B", skillIds: ["fix-grammar", "tighten", "soften", "rewrite-ask", "draft-reply", "action-items"], canRead: { text: true, images: false }, apps: ["docs", "mail"] },
-  { id: "pixel", name: "Pixel", role: "Design", color: "#C9B8FF", skillIds: ["critique", "critique-comment", "microcopy", "a11y", "name-layers", "describe-image"], canRead: { text: false, images: true }, apps: ["figma"] },
-  { id: "sprout", name: "Sprout", role: "School", color: "#FFD86B", skillIds: ["quiz", "flashcards", "explain", "summarize"], canRead: { text: true, images: true }, apps: [] },
+  { id: "scout", name: "Scout", role: "Research", species: "dog", color: "#A8DCC1", skillIds: ["summarize", "explain", "cite", "dates", "translate"], canRead: { text: true, images: true }, apps: ["wiki", "web"] },
+  { id: "quill", name: "Quill", role: "Writing", species: "bird", color: "#CBBEF5", skillIds: ["fix-grammar", "tighten", "soften", "rewrite-ask", "draft-reply", "action-items"], canRead: { text: true, images: false }, apps: ["docs", "mail"] },
+  { id: "pixel", name: "Pixel", role: "Design", species: "cat", color: "#F8BE8E", skillIds: ["critique", "critique-comment", "microcopy", "a11y", "name-layers", "describe-image"], canRead: { text: false, images: true }, apps: ["figma"] },
+  { id: "sprout", name: "Sprout", role: "School", species: "frog", color: "#F3DE85", skillIds: ["quiz", "flashcards", "explain", "summarize"], canRead: { text: true, images: true }, apps: [] },
 ];
 
 /** A fresh library: every template, the default squad. */
@@ -114,6 +119,17 @@ export function defaultLibrary() {
 }
 
 /** Accept whatever is in storage, fill gaps, drop dangling references. */
+// Pets saved before characters existed: give the default squad its species, and
+// move untouched old colours to the new palette.
+const OLD_DEFAULT_COLORS = { scout: "#9ED8C5", quill: "#FFB86B", pixel: "#C9B8FF", sprout: "#FFD86B" };
+function upgradePet(p) {
+  if (SPECIES[p.species]) return p;
+  const def = DEFAULT_PETS.find((d) => d.id === p.id);
+  const species = def?.species || SPECIES_IDS[Math.abs([...p.id].reduce((h, ch) => h * 31 + ch.charCodeAt(0), 7)) % SPECIES_IDS.length];
+  const color = def && p.color === OLD_DEFAULT_COLORS[p.id] ? def.color : p.color;
+  return { ...p, species, color };
+}
+
 // Template prompts we've since improved. Untouched copies in storage get upgraded.
 const LEGACY_PROMPTS = {
   quiz: ["Write 3 short quiz questions that test understanding of this content, then the answers under a 'Answers' heading."],
@@ -134,7 +150,7 @@ export function normalizeLibrary(stored) {
     sticker: { label: s.name.slice(0, 5), color: STICKER_COLORS[0], shape: "circle", ...(s.sticker || {}) },
   }));
   const ids = new Set(skills.map((s) => s.id));
-  const pets = stored.pets.filter((p) => p && p.id && p.name).map((p) => ({
+  const pets = stored.pets.filter((p) => p && p.id && p.name).map(upgradePet).map((p) => ({
     role: "",
     color: STICKER_COLORS[0],
     apps: [],
@@ -323,12 +339,14 @@ export function safeColor(c) {
 // ---------- shared visuals (strings only, so this module stays DOM-free) ----------
 export const STICKER_RADIUS = { circle: "50%", square: "28%", blob: "50% 50% 14% 50%" };
 
-/** The pet from the concept art, as SVG markup. */
-export function petSvg(color, size = 52, happy = false) {
-  color = safeColor(color); // markup goes through innerHTML: never trust imported values
-  size = Number(size) || 52;
-  const mouth = happy ? `<path d="M28 37q4 5 8 0" fill="#1B1A1F" stroke="#1B1A1F" stroke-width="2" stroke-linecap="round"/><circle cx="19" cy="38" r="3" fill="#F47C6A" opacity=".6"/><circle cx="45" cy="38" r="3" fill="#F47C6A" opacity=".6"/>` : `<path d="M29 38q3 3 6 0" fill="none" stroke="#1B1A1F" stroke-width="2.2" stroke-linecap="round"/>`;
-  return `<svg width="${size}" height="${Math.round(size * 0.92)}" viewBox="0 0 64 60" aria-hidden="true"><path d="M16 20L12 5l13 7z" fill="${color}" stroke="#1B1A1F" stroke-width="2.5" stroke-linejoin="round"/><path d="M48 20l4-15-13 7z" fill="${color}" stroke="#1B1A1F" stroke-width="2.5" stroke-linejoin="round"/><path d="M10 34c0-15 10-25 22-25s22 10 22 25c0 13-9 20-22 20S10 47 10 34z" fill="${color}" stroke="#1B1A1F" stroke-width="2.5"/><circle cx="25" cy="31" r="3" fill="#1B1A1F"/><circle cx="39" cy="31" r="3" fill="#1B1A1F"/>${mouth}</svg>`;
+/**
+ * A pet's character as SVG markup. Pass the pet ({species, color}) or, for
+ * placeholders, just a colour.
+ */
+export function petSvg(petOrColor, size = 52, happy = false) {
+  const pet = typeof petOrColor === "object" && petOrColor ? petOrColor : { color: petOrColor };
+  const species = SPECIES[pet.species] ? pet.species : "cat";
+  return petArt(species, safeColor(pet.color || SPECIES[species].color), size, happy);
 }
 
 // ---------- "reveal later" outputs (quizzes, flashcards) -----------------------------

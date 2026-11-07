@@ -286,6 +286,41 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   assert.ok(await page.getByRole("dialog", { name: "Keyboard shortcuts" }).isVisible());
   await shot(page, "9i-shortcuts");
   await page.keyboard.press("Escape");
+  // ---- pinned selection: the outline follows the page when you scroll
+  await page.keyboard.press("Alt+Shift+KeyL");
+  await sleep(150);
+  const pp = await page.locator("#p").boundingBox();
+  await page.mouse.move(pp.x + 40, pp.y + 10);
+  await page.mouse.wheel(0, 120); // the page still scrolls while the select tool is open
+  await sleep(200);
+  assert.ok((await page.evaluate(() => scrollY)) > 0, "page scrolls under the select tool");
+  await page.evaluate(() => scrollTo(0, 0));
+  await sleep(100);
+  await page.mouse.move(pp.x + 40, pp.y + 12);
+  await page.mouse.down();
+  await page.mouse.up();
+  await sleep(500);
+  const outlineY = () => page.evaluate(() => Number(document.querySelector("skill-pet-root").shadowRoot.querySelector("svg.pickline rect").getAttribute("y")));
+  const y0 = await outlineY();
+  await page.evaluate(() => scrollTo(0, 150));
+  await sleep(250);
+  const y1 = await outlineY();
+  assert.ok(Math.abs(y0 - 150 - y1) < 2, `outline pinned to the paragraph (${y0} → ${y1})`);
+  await shot(page, "9j-pinned-after-scroll");
+  // dropping a pet on the scrolled pick still works
+  const pinned = await page.locator("#p").boundingBox();
+  const q2 = await page.getByRole("button", { name: /^Quill,/ }).boundingBox();
+  await page.mouse.move(q2.x + q2.width / 2, q2.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(pinned.x + 60, pinned.y + 10, { steps: 10 });
+  await page.mouse.up();
+  await sleep(400);
+  assert.match(await page.getByRole("dialog", { name: "Quill's skills" }).innerText(), /Picked: 41 words/);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => scrollTo(0, 0));
+  console.log("✓ selection is pinned to the page: follows scroll, still a drop target");
+
   await sw.evaluate(() => chrome.storage.local.set({ squadCollapsed: false, squadMiniStyle: "pets" }));
   await sleep(300);
   console.log("✓ minimize (small pets / dots), hover + selection + lasso expand, hover cards, shortcuts");
@@ -324,6 +359,17 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await studio.goto(`chrome-extension://${extId}/studio.html`);
   await sleep(400);
   await studio.screenshot({ path: SS + "14-studio.png" });
+  // characters: default squad is dog / bird / cat / frog; switch Scout to a bunny
+  assert.deepEqual((await sw.evaluate(() => chrome.storage.local.get("library"))).library.pets.map((p) => p.species), ["dog", "bird", "cat", "frog"]);
+  await studio.locator(".pet", { has: studio.locator('input[value="Scout"]') }).getByRole("button", { name: "Bunny" }).click();
+  await sleep(300);
+  assert.equal((await sw.evaluate(() => chrome.storage.local.get("library"))).library.pets[0].species, "bunny");
+  await studio.screenshot({ path: SS + "14b-studio-characters.png" });
+  await sleep(200);
+  await page.bringToFront();
+  await shot(page, "14c-dock-with-bunny");
+  assert.ok(await page.evaluate(() => document.querySelector("skill-pet-root").shadowRoot.querySelectorAll(".dock .pet-art").length === 4));
+  console.log("✓ characters: species per pet, switchable in the Studio, live on pages");
   // drag "Pull dates" onto Pixel
   const src = studio.locator(".skillrow", { hasText: "Pull dates" });
   const dst = studio.locator(".pet", { has: studio.locator('input[value="Pixel"]') });

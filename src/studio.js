@@ -5,6 +5,9 @@ import {
   KINDS,
   STICKER_COLORS,
   STICKER_RADIUS,
+  PET_COLORS,
+  SPECIES,
+  SPECIES_IDS,
   TEMPLATES,
   normalizeLibrary,
   petSvg,
@@ -136,14 +139,32 @@ function renderSquad() {
     );
     const card = el("div", { class: "pet" }, [
       el("div", { class: "top" }, [
-        el("span", { html: petSvg(pet.color, 52) }),
+        el("span", { class: "pet-face", html: petSvg(pet, 60) }),
         el("div", { class: "names" }, [
           input(pet, "name", `Name of ${pet.name}`),
           input(pet, "role", `${pet.name}'s role`, "role"),
         ]),
       ]),
+      el("div", { class: "species", role: "group", "aria-label": `${pet.name}'s character` },
+        SPECIES_IDS.map((sp) =>
+          el("button", {
+            type: "button",
+            class: "sp",
+            title: SPECIES[sp].label,
+            "aria-label": `${SPECIES[sp].label}${pet.species === sp ? " (current)" : ""}`,
+            "aria-pressed": String(pet.species === sp),
+            html: petSvg({ species: sp, color: pet.species === sp ? pet.color : SPECIES[sp].color }, 30),
+            onclick: () => {
+              if (pet.species === sp) return;
+              pet.species = sp;
+              pet.color = SPECIES[sp].color;
+              save(`${pet.name} is now a ${SPECIES[sp].label.toLowerCase()}`);
+            },
+          }),
+        ),
+      ),
       el("div", { class: "swatches", role: "group", "aria-label": `${pet.name}'s color` },
-        STICKER_COLORS.map((c) => el("button", { class: "sw", type: "button", style: { background: c }, "aria-label": `Color ${c}`, "aria-pressed": String(pet.color === c), onclick: () => ((pet.color = c), save()) })),
+        PET_COLORS.map((c) => el("button", { class: "sw", type: "button", style: { background: c }, "aria-label": `Color ${c}`, "aria-pressed": String(pet.color === c), onclick: () => ((pet.color = c), save()) })),
       ),
       drop,
       el("div", { class: "perms" }, [
@@ -187,7 +208,7 @@ function renderSquad() {
     });
     return card;
   });
-  const adopt = el("button", { class: "adopt", type: "button", onclick: adoptPet }, [el("span", { html: petSvg("#E3DFD6", 44) }), "Adopt a new pet"]);
+  const adopt = el("button", { class: "adopt", type: "button", onclick: adoptPet }, [el("span", { html: petSvg({ species: nextSpecies(), color: "#E3DFD6" }, 48) }), "Adopt a new pet"]);
   $("squad").replaceChildren(...cards, adopt);
 }
 function input(pet, key, label, cls) {
@@ -200,10 +221,13 @@ function check(id, label, value, onchange) {
   c.addEventListener("change", () => onchange(c.checked));
   return el("label", { for: id }, [c, label]);
 }
+function nextSpecies() {
+  const used = new Set(lib.pets.map((p) => p.species));
+  return SPECIES_IDS.find((sp) => !used.has(sp)) || SPECIES_IDS[lib.pets.length % SPECIES_IDS.length];
+}
 function adoptPet() {
-  const used = new Set(lib.pets.map((p) => p.color));
-  const color = STICKER_COLORS.find((c) => !used.has(c)) || STICKER_COLORS[lib.pets.length % STICKER_COLORS.length];
-  lib.pets.push({ id: uid("pet"), name: "New pet", role: "Helper", color, skillIds: [], canRead: { text: true, images: true }, apps: [] });
+  const species = nextSpecies();
+  lib.pets.push({ id: uid("pet"), name: SPECIES[species].label, role: "Helper", species, color: SPECIES[species].color, skillIds: [], canRead: { text: true, images: true }, apps: [] });
   save("Adopted! Name it and drag skills onto it.");
 }
 
@@ -417,7 +441,7 @@ function historyCard(e) {
   const when = new Date(e.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   return el("article", { class: "hitem" }, [
     el("div", { class: "hrow" }, [
-      st ? sticker(st, 34) : el("span", { html: petSvg(e.petColor || "#FFB86B", 34) }),
+      st ? sticker(st, 34) : el("span", { html: petSvg({ species: e.petSpecies, color: e.petColor }, 34) }),
       el("div", { class: "hmeta" }, [
         el("div", { class: "hname", text: e.skillName + (e.request ? ` — “${e.request}”` : "") }),
         el("div", { class: "hsub" }, [
@@ -500,6 +524,6 @@ $("importFile").addEventListener("change", async () => {
 
 $("q").addEventListener("input", renderLibrary);
 $("newSkill").addEventListener("click", () => openEditor(null));
-$("logo").innerHTML = petSvg("#FFB86B", 30);
+$("logo").innerHTML = petSvg({ species: "cat" }, 34, true);
 load();
 loadHistory().then(() => showTab(location.hash === "#history" ? "history" : "build"));

@@ -21,6 +21,10 @@ Open it by clicking the extension's toolbar icon, or from Options. Everything is
 
 Edits apply to open tabs immediately; no rebuild.
 
+### Characters
+
+Each pet is one of seven characters: **cat, dog, bird, frog, bunny, bear, ghost**. They're drawn as SVG, with an open face and a happy ^^ face shown on hover and while working. The default squad is Scout the dog, Quill the bird, Pixel the cat and Sprout the frog. In the Studio, each pet card has a character picker and color swatches, and *Adopt* picks a character the squad doesn't have yet. Pets saved before characters existed are migrated automatically.
+
 ### 2. On any page: the squad dock (04 Pet squad)
 
 | Do this | What happens |
@@ -48,6 +52,10 @@ Edits apply to open tabs immediately; no rebuild.
 | In a pet's card: **1–9**, **↑↓**, **/** | Run skill n · move · ask anything |
 | **Esc** | Cancel selecting / clear the selection / close |
 | **Alt+Shift+P / H / S / R** | Search · History · show/hide squad · rerun last |
+
+### The selection is pinned to the page
+
+What you pick with **Select** isn't a floating overlay. Each part is attached to the element it came from (a box is attached to that spot in the document). Its outline scrolls with the page and follows layout changes, and you can still drop a pet on it after scrolling. While the Select tool is open, the scroll wheel still scrolls the page, or the inner scroller under your pointer. The tool's full-screen layer only exists while you're picking; once you finish, the page is fully clickable again and only the outline stays.
 
 ### Long answers and quizzes
 
@@ -131,6 +139,8 @@ npm run e2e
 - a fake Figma file → drag Pixel onto the frame → approve → a comment is posted to node `12:34` with the frame's text layers in the prompt
 - Studio: drag a skill onto a pet, create a new skill and assign it
 - minimize to small pets / dots, expand on hover, selection and Select, hover cards, Alt+1 / 1–9 / Alt-drag box select / click + Shift-click select / Alt+/;
+- the selection stays pinned to the paragraph when scrolling and is still a drop target; the page scrolls under the Select tool;
+- characters: species per pet, switching one in the Studio updates the dock live;
 - a long quiz answer scrolls even when the page swallows wheel events, the panel expands, and answers stay hidden until clicked;
 - the loading screen appears while generating; history logs approved / posted / Studio-test runs; the in-page History panel and the Studio History tab
 

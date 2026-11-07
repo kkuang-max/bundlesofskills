@@ -53,6 +53,13 @@
   .pet .top input:hover{background:#fff}
   .pet .names{display:flex;flex-direction:column;flex:1;min-width:0}
   .swatches{display:flex;gap:4px}
+  .species{display:flex;gap:2px;flex-wrap:wrap}
+  .species .sp{width:38px;height:38px;border:1px solid transparent;border-radius:10px;background:transparent;padding:3px;display:flex;align-items:center;justify-content:center;opacity:.55}
+  .species .sp:hover{opacity:1;background:#fff}
+  .species .sp[aria-pressed=true]{opacity:1;background:#fff;border-color:var(--ink)}
+  .pet .pet-face svg .e-happy{display:none}
+  .pet:hover .pet-face .e-open{display:none}
+  .pet:hover .pet-face .e-happy{display:inline!important}
   .sw{width:18px;height:18px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px var(--line)}
   .sw[aria-pressed=true]{box-shadow:0 0 0 2px var(--ink)}
   .drop{display:flex;flex-direction:column;gap:5px;min-height:60px;padding:6px;border:1.5px dashed #D9D4C9;border-radius:12px;background:#fff}

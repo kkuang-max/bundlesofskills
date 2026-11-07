@@ -77,7 +77,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .pet:active{cursor:grabbing}
 .pet .face{display:block;line-height:0;transition:transform .15s ease}
 .pet:hover .face{transform:translateY(-3px) rotate(-4deg)}
-.pet .face svg{width:52px;height:48px;transition:width .18s ease,height .18s ease}
+.pet:hover .e-open,.pet:focus-visible .e-open,.thinking .head .e-open{display:none}
+.pet:hover .e-happy,.pet:focus-visible .e-happy,.thinking .head .e-happy{display:inline!important}
+.pet .face svg{width:52px;height:52px;transition:width .18s ease,height .18s ease}
 .pet .dot{display:block;width:0;height:0;border-radius:50%;border:0 solid #1B1A1F;transition:all .18s ease}
 .pet .nm{font-size:11px;font-weight:600}
 .pet .rl{font-size:10px;color:#5E5B66}
@@ -100,7 +102,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .dock.mini:not(.open){gap:8px;padding:6px 8px 6px 12px;border-radius:999px}
 .dock.mini:not(.open){align-items:center}
 .dock.mini:not(.open) .pet{min-width:0;gap:0}
-.dock.mini:not(.open) .pet .face svg{width:28px;height:26px}
+.dock.mini:not(.open) .pet .face svg{width:30px;height:30px}
 .dock.mini:not(.open) .pet .nm,.dock.mini:not(.open) .pet .rl{max-height:0;max-width:0;opacity:0}
 .dock.mini:not(.open) .extras{max-width:0;max-height:0;opacity:0}
 .dock.mini:not(.open) .pin{width:20px;height:20px}
@@ -417,31 +419,31 @@ function targetAt(x, y, { elementsOnly = false } = {}) {
     if (canvas) {
       const fig = parseFigmaUrl(location.href);
       const rect = canvas.getBoundingClientRect();
-      return { rect, label: fig?.nodeId ? "Selected Figma frame" : "Figma canvas (select a frame first for comments)", build: () => figmaCtx(rect, fig) };
+      return { anchor: canvas, rect, label: fig?.nodeId ? "Selected Figma frame" : "Figma canvas (select a frame first for comments)", build: () => figmaCtx(rect, fig) };
     }
   }
   // 4) Google Docs/Sheets/Slides draw on a canvas → screenshot the page area
   if (CANVAS_APPS.includes(a)) {
     const page = node.closest(".kix-page-paginated,.kix-page,.punch-viewer-content,.grid-container,canvas") || node;
     const rect = page.getBoundingClientRect();
-    return { rect, label: "This page (screenshot)", build: async () => imageCtx(rect, "Screenshot of " + (a === "docs" ? "the doc page" : a === "sheets" ? "the sheet" : "the slide")) };
+    return { anchor: page, rect, label: "This page (screenshot)", build: async () => imageCtx(rect, "Screenshot of " + (a === "docs" ? "the doc page" : a === "sheets" ? "the sheet" : "the slide")) };
   }
   // 5) images & media
   const media = node.closest("img,picture,svg,video,canvas");
   if (media && media.getBoundingClientRect().width > 24) {
     const rect = media.getBoundingClientRect();
-    return { rect, label: "Image", build: async () => imageCtx(rect, media.getAttribute("alt") ? `Image: ${media.getAttribute("alt")}` : "Image") };
+    return { anchor: media, rect, label: "Image", build: async () => imageCtx(rect, media.getAttribute("alt") ? `Image: ${media.getAttribute("alt")}` : "Image") };
   }
   // 6) text fields / rich editors → editable
   if (isField(node)) {
     const rect = node.getBoundingClientRect();
-    return { rect, label: "Text field", build: async () => fieldCtx(node) };
+    return { anchor: node, rect, label: "Text field", build: async () => fieldCtx(node) };
   }
   const er = editableRoot(node);
   if (er) {
     const blk = (er.innerText || "").length < 6000 ? er : node.closest(BLOCKS + ",div") || er;
     const rect = blk.getBoundingClientRect();
-    return { rect, label: "Editable text", build: async () => richCtx(blk) };
+    return { anchor: blk, rect, label: "Editable text", build: async () => richCtx(blk) };
   }
   // 7) a block of text
   let blk = node.closest(BLOCKS);
@@ -451,7 +453,7 @@ function targetAt(x, y, { elementsOnly = false } = {}) {
   }
   if (blk && blk !== document.body && (blk.innerText || "").trim().length >= 2 && (blk.innerText || "").length < 20000) {
     const rect = blk.getBoundingClientRect();
-    return { rect, label: blk.matches("h1,h2,h3,h4,h5,h6") ? "Heading" : "Text", build: async () => textCtx(blk.innerText) };
+    return { anchor: blk, rect, label: blk.matches("h1,h2,h3,h4,h5,h6") ? "Heading" : "Text", build: async () => textCtx(blk.innerText) };
   }
   return null;
 }
@@ -570,7 +572,7 @@ function renderDock() {
   lib.pets.forEach((pet, i) => {
     const key = i < 9 ? String(i + 1) : "";
     const p = el("div", { class: "pet", tabindex: "0", role: "button", "data-pet": pet.id, "aria-label": `${pet.name}, ${pet.role}. Drag onto something, or press Enter to use your selection.${key ? ` Shortcut ${ALT}${key}.` : ""}` }, [
-      el("span", { class: "face", html: petSvg(pet.color, 52) }),
+      el("span", { class: "face", html: petSvg(pet, 52) }),
       el("span", { class: "dot", style: { background: pet.color }, "aria-hidden": "true" }),
       el("span", { class: "nm", text: pet.name }),
       el("span", { class: "rl", text: pet.role }),
@@ -705,7 +707,7 @@ function startDrag(e, pet, petEl) {
       hideTip();
       setOpen("drag", true);
       petEl.classList.add("away");
-      drag.ghost = el("div", { class: "ghost", html: petSvg(pet.color, 64, true) });
+      drag.ghost = el("div", { class: "ghost", html: petSvg(pet, 64, true) });
       layer.append(drag.ghost);
     }
     drag.ghost.style.left = `${ev.clientX}px`;
@@ -903,7 +905,7 @@ function startSelect(startEvent = null) {
   layer.append(pane);
 
   const redrawChosen = () => {
-    const fresh = outlineSvg(picks.map((p) => (p.kind === "box" ? p.rect : p.t.rect)));
+    const fresh = outlineSvg(picks.map((p) => anchorRect(p.anchor)));
     chosen.replaceWith(fresh);
     chosen = fresh;
     hint.firstChild.textContent = picks.length ? `${picks.length} selected` : "Click something, or drag a box";
@@ -945,10 +947,10 @@ function startSelect(startEvent = null) {
     marquee.hidden = true;
     if (boxing) {
       const rect = new DOMRect(Math.min(x0, e.clientX), Math.min(y0, e.clientY), Math.abs(e.clientX - x0), Math.abs(e.clientY - y0));
-      if (rect.width > 8 && rect.height > 8) picks.push({ kind: "box", rect });
+      if (rect.width > 8 && rect.height > 8) picks.push({ kind: "box", rect, anchor: docAnchor(rect) });
     } else {
       const t = targetAt(e.clientX, e.clientY, { elementsOnly: true });
-      if (t) picks.push({ kind: "el", t });
+      if (t) picks.push({ kind: "el", t, anchor: t.anchor ? { node: t.anchor } : docAnchor(t.rect) });
     }
     if (e.shiftKey) return redrawChosen(); // keep adding
     finish();
@@ -958,16 +960,45 @@ function startSelect(startEvent = null) {
     showHover(startEvent.clientX, startEvent.clientY);
   }
 
+  // Scrolling while selecting: keep the chosen outlines on their things.
+  const follow = () => picks.length && redrawChosen();
+  addEventListener("scroll", follow, true);
+  let lastPointer = [0, 0];
+  pane.addEventListener("pointermove", (e) => (lastPointer = [e.clientX, e.clientY]));
+  // The page still scrolls under the select tool: scroll whatever is under the
+  // pointer (an inner scroller, else the page), then re-aim the hover highlight.
+  pane.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      layer.style.display = "none";
+      let n = document.elementFromPoint(e.clientX, e.clientY);
+      layer.style.display = "";
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * innerHeight : e.deltaY;
+      const dx = e.deltaMode === 1 ? e.deltaX * 16 : e.deltaX;
+      while (n && n !== document.body && n !== document.documentElement) {
+        const cs = getComputedStyle(n);
+        if ((/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight) || (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth)) break;
+        n = n.parentElement;
+      }
+      (n && n !== document.body && n !== document.documentElement ? n : document.scrollingElement || document.documentElement).scrollBy(dx, dy);
+      requestAnimationFrame(() => showHover(...lastPointer));
+    },
+    { passive: false },
+  );
   selectEnter = () => finish();
   selectCancel = () => {
+    removeEventListener("scroll", follow, true);
     pane.remove();
     endSelect();
   };
   async function finish() {
+    removeEventListener("scroll", follow, true);
     pane.remove();
     endSelect();
     if (!picks.length) return;
-    const rects = picks.map((p) => (p.kind === "box" ? p.rect : p.t.rect));
+    const anchors = picks.map((p) => p.anchor);
+    const rects = anchors.map(anchorRect);
     const svg = outlineSvg(rects);
     layer.prepend(svg); // the outlines stay as the visible "pick"
     const chip = el("div", { class: "pickchip", role: "status" }, [spinner(), "Reading what you selected…"]);
@@ -975,13 +1006,10 @@ function startSelect(startEvent = null) {
     setOpen("pick", true);
     try {
       const parts = await Promise.all(
-        picks.map((p) => (p.kind === "box" ? regionCtx(boxPolygon(p.rect), p.rect).then((ctx) => ({ ctx, target: null })) : p.t.build())),
+        picks.map((p, i) => (p.kind === "box" ? regionCtx(boxPolygon(rects[i]), rects[i]).then((ctx) => ({ ctx, target: null })) : p.t.build())),
       );
       const { ctx, target } = mergePicks(parts);
-      const union = new DOMRect(Math.min(...rects.map((r) => r.left)), Math.min(...rects.map((r) => r.top)), 0, 0);
-      const right = Math.max(...rects.map((r) => r.right));
-      const bottom = Math.max(...rects.map((r) => r.bottom));
-      picked = { rect: new DOMRect(union.x, union.y, right - union.x, bottom - union.y), ctx, target, svg, chip };
+      picked = { rect: unionRect(anchors.map(anchorRect)), anchors, ctx, target, svg, chip };
       const n = Math.min(lib.pets.length, 9);
       chip.replaceChildren(
         el("span", { text: `Selected: ${ctx.label}.` }),
@@ -999,6 +1027,42 @@ function startSelect(startEvent = null) {
     }
   }
 }
+
+// The pick is pinned to the page: each part remembers what it's attached to
+// (an element, or a spot in the document for a box) and its outline follows
+// it when you scroll, resize, or the layout shifts.
+const docAnchor = (r) => ({ doc: new DOMRect(r.left + scrollX, r.top + scrollY, r.width, r.height) });
+function anchorRect(a) {
+  if (a.node?.isConnected) return a.node.getBoundingClientRect();
+  if (a.doc) return new DOMRect(a.doc.x - scrollX, a.doc.y - scrollY, a.doc.width, a.doc.height);
+  return new DOMRect(-9999, -9999, 0, 0);
+}
+function unionRect(rects) {
+  const l = Math.min(...rects.map((r) => r.left));
+  const t = Math.min(...rects.map((r) => r.top));
+  return new DOMRect(l, t, Math.max(...rects.map((r) => r.right)) - l, Math.max(...rects.map((r) => r.bottom)) - t);
+}
+let pinRaf = 0;
+function repositionPick() {
+  cancelAnimationFrame(pinRaf);
+  pinRaf = requestAnimationFrame(() => {
+    if (!picked?.anchors) return;
+    const rects = picked.anchors.map(anchorRect);
+    [...picked.svg.querySelectorAll("rect")].forEach((box, i) => {
+      const r = rects[i];
+      if (!r) return;
+      box.setAttribute("x", r.left - 3);
+      box.setAttribute("y", r.top - 3);
+      box.setAttribute("width", r.width + 6);
+      box.setAttribute("height", r.height + 6);
+    });
+    picked.rect = unionRect(rects);
+  });
+}
+addEventListener("scroll", repositionPick, true); // capture: inner scrollers too
+addEventListener("resize", repositionPick);
+new ResizeObserver(repositionPick).observe(document.documentElement);
+
 let selectEnter = null;
 const boxPolygon = (r) => [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]];
 
@@ -1232,7 +1296,7 @@ function openBar() {
   layer.append(
     el("div", { class: "scrim", onclick: () => clearUI() }),
     el("div", { class: "bar", role: "dialog", "aria-label": "Search skills" }, [
-      el("div", { class: "row" }, [el("span", { html: petSvg(suggestPet(lib, ctx)?.color || "#FFB86B", 34) }), input, el("span", { class: "kbd", text: "esc" })]),
+      el("div", { class: "row" }, [el("span", { html: petSvg(suggestPet(lib, ctx) || "#FFB86B", 34) }), input, el("span", { class: "kbd", text: "esc" })]),
       list,
       el("div", { class: "bfoot" }, [el("span", { text: `Picked: ${ctx.label}` }), el("span", { text: "↑↓ ↵ · drag a pet for its own skills" })]),
     ]),
@@ -1251,7 +1315,7 @@ function loader(pet, ctx, verb) {
   const what = [ctx.text ? `${ctx.text.trim().split(/\s+/).length} words` : "", n ? `${n} image${n > 1 ? "s" : ""}` : ""].filter(Boolean).join(" + ") || "your request";
   return el("div", { class: "loading", role: "status", "aria-live": "polite" }, [
     el("div", { class: "ld-top" }, [
-      el("span", { class: "ld-pet", html: petSvg(pet?.color || "#FFB86B", 40, true) }),
+      el("span", { class: "ld-pet", html: petSvg(pet || "#FFB86B", 40, true) }),
       el("div", {}, [el("div", { class: "ld-title", text: `${pet ? pet.name : "The pet"} is ${verb}…` }), el("div", { class: "ld-sub", text: `Sending ${what} to the model` })]),
       el("span", { class: "ld-time", text: "0s" }),
     ]),
@@ -1307,7 +1371,7 @@ function run(ctx, target, opts) {
 
   const panel = el("div", { class: "result thinking", role: "dialog", "aria-label": label }, [
     el("div", { class: "head" }, [
-      el("span", { html: petSvg(pet?.color || "#FFB86B", 30) }),
+      el("span", { html: petSvg(pet || "#FFB86B", 30) }),
       el("span", { class: "grow" }, [el("div", { text: label }), el("div", { class: "sub", text: `${pet ? pet.name + " · " : ""}${ctx.label}` })]),
       expandButton(() => panel),
       el("button", { class: "x", "aria-label": "Close", text: "×", onclick: () => clearUI() }),
@@ -1492,7 +1556,7 @@ function historyItem(e) {
   const more = el("button", { class: "link", text: "Show more", onclick: () => { body.classList.toggle("open"); more.textContent = body.classList.contains("open") ? "Show less" : "Show more"; } });
   return el("article", { class: "hitem" }, [
     el("div", { class: "hrow" }, [
-      st ? sticker({ sticker: st }, 26) : el("span", { html: petSvg(e.petColor || "#FFB86B", 26) }),
+      st ? sticker({ sticker: st }, 26) : el("span", { html: petSvg({ species: e.petSpecies, color: e.petColor }, 26) }),
       el("div", { class: "hmeta" }, [
         el("div", { class: "hname", text: e.skillName }),
         el("div", { class: "hsub", text: [e.petName, e.source === "studio" ? "Studio test" : e.picked, timeAgo(e.at)].filter(Boolean).join(" · ") }),
