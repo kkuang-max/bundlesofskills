@@ -41,10 +41,11 @@ function toError(status, body) {
 }
 
 /**
- * Stream one completion. Calls onText(delta) as text arrives.
+ * Stream one completion. Calls onText(delta) as text arrives. Pass either
+ * `user` (a string) or `content` (text + image parts; needs a vision model).
  * Resolves {text, finishReason, usage}; throws OpenRouterError on failure.
  */
-export async function streamChat({ apiKey, model, effort, system, user, onText = () => {}, signal, fetchImpl = fetch }) {
+export async function streamChat({ apiKey, model, effort, system, user, content, onText = () => {}, signal, fetchImpl = fetch }) {
   const res = await fetchImpl(OPENROUTER_URL, {
     method: "POST",
     signal,
@@ -63,7 +64,8 @@ export async function streamChat({ apiKey, model, effort, system, user, onText =
       reasoning: { effort: effort || DEFAULTS.effort, exclude: true },
       messages: [
         { role: "system", content: system },
-        { role: "user", content: user },
+        // `content` may be OpenAI-style parts: [{type:"text"}, {type:"image_url"}]
+        { role: "user", content: content ?? user },
       ],
     }),
   });

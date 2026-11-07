@@ -1,6 +1,6 @@
 import { DEFAULTS as MODEL_DEFAULTS } from "./openrouter.js";
 
-const DEFAULTS = { apiKey: "", ...MODEL_DEFAULTS, peekEnabled: true, peekBlocked: [] };
+const DEFAULTS = { apiKey: "", ...MODEL_DEFAULTS, peekEnabled: true, peekBlocked: [], figmaToken: "", squadVisible: true };
 const $ = (id) => document.getElementById(id);
 
 chrome.storage.local.get(DEFAULTS).then((s) => {
@@ -8,6 +8,8 @@ chrome.storage.local.get(DEFAULTS).then((s) => {
   $("model").value = s.model;
   $("effort").value = s.effort;
   $("peekEnabled").checked = s.peekEnabled;
+  $("figmaToken").value = s.figmaToken;
+  $("squadVisible").checked = s.squadVisible;
   $("peekBlocked").value = s.peekBlocked.join("\n");
 });
 
@@ -17,6 +19,8 @@ $("save").addEventListener("click", async () => {
     model: $("model").value.trim() || DEFAULTS.model,
     effort: $("effort").value,
     peekEnabled: $("peekEnabled").checked,
+    figmaToken: $("figmaToken").value.trim(),
+    squadVisible: $("squadVisible").checked,
     peekBlocked: $("peekBlocked").value.split(/\s+/).map((h) => h.trim()).filter(Boolean),
   });
   $("status").textContent = "Saved";

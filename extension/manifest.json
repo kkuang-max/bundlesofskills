@@ -1,23 +1,64 @@
 {
   "manifest_version": 3,
   "name": "Skill Pet (MVP)",
-  "version": "0.1.0",
-  "description": "A small companion that runs AI skills on whatever you select.",
-  "permissions": ["storage", "contextMenus", "activeTab", "clipboardWrite"],
-  "host_permissions": ["https://openrouter.ai/*"],
-  "background": { "service_worker": "dist/background.js" },
+  "version": "0.2.0",
+  "description": "A squad of pets that run AI skills on whatever you drag them onto: text, images, Google Docs, Figma frames.",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "activeTab",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "dist/background.js"
+  },
   "content_scripts": [
-    { "matches": ["<all_urls>"], "js": ["dist/content.js"], "run_at": "document_idle", "all_frames": false }
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "dist/content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
   ],
   "options_page": "options.html",
   "commands": {
     "summon": {
-      "suggested_key": { "default": "Alt+Shift+P", "mac": "Alt+Shift+P" },
-      "description": "Summon the pet (command bar)"
+      "suggested_key": {
+        "default": "Alt+Shift+P",
+        "mac": "Alt+Shift+P"
+      },
+      "description": "Search skills (command bar)"
+    },
+    "lasso": {
+      "suggested_key": {
+        "default": "Alt+Shift+L",
+        "mac": "Alt+Shift+L"
+      },
+      "description": "Lasso-select part of the page"
+    },
+    "toggle-squad": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Alt+Shift+S"
+      },
+      "description": "Show or hide the pet squad"
     },
     "rerun-last": {
-      "suggested_key": { "default": "Alt+Shift+R", "mac": "Alt+Shift+R" },
-      "description": "Rerun the last skill on the current selection"
+      "suggested_key": {
+        "default": "Alt+Shift+R",
+        "mac": "Alt+Shift+R"
+      },
+      "description": "Rerun the last skill on the current pick"
     }
+  },
+  "action": {
+    "default_title": "Open Skill Studio"
   }
 }

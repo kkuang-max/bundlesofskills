@@ -1,57 +1,207 @@
-// End-to-end: loads the unpacked extension in Chromium, fakes the OpenRouter API
-// with a canned SSE stream, and walks peek -> no-key error -> command bar ->
-// streamed result -> Replace selection. Run: npm run build && npm run e2e
-const { chromium } = require('playwright');
-const http = require('http'); const fs = require('fs');
-const path = require('path'); const EXT = path.resolve(__dirname, '../extension');
-const SS = path.resolve(__dirname, 'screenshots') + '/'; fs.mkdirSync(SS, { recursive: true });
+// End-to-end: loads the unpacked extension in Chromium and fakes OpenRouter and
+// the Figma API. Walks: squad dock → drag a pet onto a text field → approve a
+// rewrite; drag onto an image (screenshot goes to the model); lasso a paragraph
+// → click a pet; search bar; a fake Figma file → approve & post a comment;
+// Skill Studio → drag a skill onto a pet, create a skill.
+// Run: npm run build && npm run e2e   (screenshots → test/screenshots/)
+const { chromium } = require("playwright");
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const assert = require("assert/strict");
+
+const EXT = path.resolve(__dirname, "../extension");
+const SS = path.resolve(__dirname, "screenshots") + "/";
+fs.mkdirSync(SS, { recursive: true });
+const shot = (page, name) => page.screenshot({ path: SS + name + ".png" });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const FIGMA_PAGE = `<!doctype html><html><head><title>Checkout flow – Figma</title></head><body style="margin:0;background:#E5E5E5">
+<div style="height:48px;background:#2C2C2C"></div><canvas id="c" width="1000" height="560" style="display:block"></canvas>
+<script>const g=document.getElementById('c').getContext('2d');g.fillStyle='#fff';g.fillRect(300,60,260,440);g.fillStyle='#3A6FD8';g.fillRect(330,420,200,44);g.fillStyle='#D9D4C9';g.fillRect(330,100,160,20);</script></body></html>`;
+const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+
 (async () => {
-  const srv = http.createServer((q, r) => { r.setHeader('content-type','text/html'); r.end(fs.readFileSync(__dirname + '/fixture.html')); }).listen(8765);
-  const ctx = await chromium.launchPersistentContext('', { headless: true, channel: 'chromium', args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`], viewport: { width: 1000, height: 640 } });
-  let sw = ctx.serviceWorkers()[0] || await ctx.waitForEvent('serviceworker');
-  // Fake OpenRouter: OpenAI-style SSE stream
-  let seenBody = null;
-  await ctx.route('https://openrouter.ai/**', async (route) => {
-    seenBody = JSON.parse(route.request().postData());
-    seenBody.__auth = route.request().headers()['authorization'];
-    const text = 'This sentence has some mistakes in it and needs fixing.';
-    const chunk = (delta, finish) => `data: ${JSON.stringify({ id: 'gen-1', model: seenBody.model, choices: [{ index: 0, delta, finish_reason: finish || null }] })}\n\n`;
-    const body = ': OPENROUTER PROCESSING\n\n' + chunk({ role: 'assistant', content: text.slice(0, 20) }) + chunk({ content: text.slice(20) }) + chunk({}, 'stop') + 'data: [DONE]\n\n';
-    await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body });
+  const srv = http.createServer((q, r) => { r.setHeader("content-type", "text/html"); r.end(fs.readFileSync(path.join(__dirname, "fixture.html"))); }).listen(8765);
+  const ctx = await chromium.launchPersistentContext("", { headless: true, channel: "chromium", args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`], viewport: { width: 1100, height: 760 } });
+  const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker"));
+  const extId = new URL(sw.url()).host;
+
+  // ---- fakes
+  const calls = [];
+  await ctx.route("https://openrouter.ai/**", async (route) => {
+    const body = JSON.parse(route.request().postData());
+    calls.push(body);
+    const sys = body.messages[0].content;
+    const text = /replace the original text/.test(sys) ? "This sentence has some mistakes in it and needs fixing."
+      : /posted as a comment/.test(sys) ? "Primary button label is vague; say “Pay $42” instead of “Continue”."
+      : "• Beta ships Friday 14 Nov\n• Maya: release notes; Sam: login bug\n• Design review next week";
+    const chunk = (delta, finish) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish || null }] })}\n\n`;
+    await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: ": OPENROUTER PROCESSING\n\n" + chunk({ content: text.slice(0, 15) }) + chunk({ content: text.slice(15) }) + chunk({}, "stop") + "data: [DONE]\n\n" });
   });
+  let figmaComment = null;
+  await ctx.route("https://www.figma.com/**", (route) => route.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: FIGMA_PAGE }));
+  await ctx.route("https://api.figma.com/**", async (route) => {
+    const u = new URL(route.request().url());
+    if (u.pathname.endsWith("/comments")) {
+      figmaComment = { token: route.request().headers()["x-figma-token"], body: JSON.parse(route.request().postData()) };
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "c1" }) });
+    }
+    if (u.pathname.includes("/nodes")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ nodes: { "12:34": { document: { name: "Checkout / Pay", type: "FRAME", children: [{ type: "TEXT", characters: "Continue" }] } } } }) });
+    if (u.pathname.includes("/images")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ images: { "12:34": "https://figma-render.test/frame.png" } }) });
+    route.fulfill({ status: 404, body: "{}" });
+  });
+  await ctx.route("https://figma-render.test/**", (route) => route.fulfill({ status: 200, contentType: "image/png", body: PNG_1PX }));
+
+  await sw.evaluate(() => chrome.storage.local.set({ apiKey: "sk-or-v1-test", figmaToken: "figd_test" }));
   const page = await ctx.newPage();
-  await page.goto('http://localhost:8765/');
-  await page.waitForTimeout(500);
+  await page.goto("http://localhost:8765/");
+  await sleep(600);
+  await shot(page, "1-squad");
 
-  // 1) No key yet → peek on paragraph, click first suggestion → error message
-  await page.locator('#p').selectText(); await page.mouse.move(200,60); await page.mouse.down(); await page.mouse.up();
-  await page.locator('#p').evaluate(el => { const r = document.createRange(); r.selectNodeContents(el); getSelection().removeAllRanges(); getSelection().addRange(r); });
-  await page.dispatchEvent('#p', 'mouseup');
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: SS + '1-peek.png' });
-  console.log('peek root present:', await page.locator('skill-pet-root').count());
+  // Find the dock: hit-test along the bottom row for our host element.
+  const xs = [];
+  for (let x = 300; x < 800; x += 4) {
+    const hit = await page.evaluate(([x]) => document.elementFromPoint(x, innerHeight - 60)?.tagName, [x]);
+    if (hit === "SKILL-PET-ROOT") xs.push(x);
+  }
+  assert.ok(xs.length > 50, "dock is visible");
+  const dockLeft = xs[0];
+  // pet centers: padding 18 + 52/2, then +70 per pet (52 width + 18 gap)
+  const pet = (i) => ({ x: dockLeft + 18 + 26 + i * 70, y: 760 - 14 - 8 - 32 - 24 });
 
-  // click first peek suggestion with no key → error shown
-  await page.mouse.click(130, 127); await page.waitForTimeout(400);
-  console.log('no-key text:', await page.evaluate(() => document.querySelector('skill-pet-root') && 'ok'));
-  await page.screenshot({ path: SS + '1b-nokey.png' });
-  await page.keyboard.press('Escape');
-  // set key via storage from the SW
-  await sw.evaluate(() => chrome.storage.local.set({ apiKey: 'sk-or-v1-test' }));
+  async function drag(from, to) {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 });
+    await page.mouse.move(to.x, to.y, { steps: 12 });
+    await sleep(150);
+  }
+  const center = async (sel) => { const b = await page.locator(sel).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
 
-  // 2) Select inside textarea, summon command bar via the SW (same as the hotkey)
-  await page.evaluate(() => { const t = document.getElementById('t'); t.focus(); t.setSelectionRange(0, t.value.length); });
-  await sw.evaluate(async () => { for (const t of await chrome.tabs.query({})) { try { await chrome.tabs.sendMessage(t.id, { type: 'summon' }); } catch {} } });
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: SS + '2-bar.png' });
-  await page.keyboard.type('fix');
-  await page.waitForTimeout(150);
-  await page.screenshot({ path: SS + '3-bar-search.png' });
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(800);
-  await page.screenshot({ path: SS + '4-result.png' });
-  await page.mouse.click(380, 218); await page.waitForTimeout(200);
-  console.log('textarea after replace:', await page.inputValue('#t'));
-  console.log('request:', JSON.stringify({ model: seenBody?.model, reasoning: seenBody?.reasoning, auth: seenBody?.__auth, user: seenBody?.messages?.[1]?.content?.slice(0, 120) }));
-  srv.close(); await ctx.close();
-})().catch(e => { console.error(e); process.exit(1); });
+  // ---- 1) drag Quill onto the textarea → approve a rewrite
+  await drag(pet(1), await center("#t"));
+  await shot(page, "2-drag-quill-onto-field");
+  await page.mouse.up();
+  await sleep(500);
+  await shot(page, "3-quill-card");
+  await page.keyboard.press("Enter"); // first skill is focused: Fix spelling & grammar
+  await sleep(700);
+  await shot(page, "4-approve-rewrite");
+  assert.equal(await page.inputValue("#t"), "this sentense have some mistake in it and need fixing", "nothing changes before approval");
+  // Approve button is the first action button; tab to it is fiddly, so click by text position via accessibility tree
+  await page.getByRole("button", { name: "Approve & replace" }).click();
+  await sleep(200);
+  assert.equal(await page.inputValue("#t"), "This sentence has some mistakes in it and needs fixing.");
+  console.log("✓ drag Quill → field → approve rewrite");
+
+  // ---- 2) drag Pixel onto the image → its design skills, screenshot sent
+  await drag(pet(2), await center("#img"));
+  await page.mouse.up();
+  await sleep(900);
+  await shot(page, "5-pixel-on-image");
+  await page.getByRole("button", { name: "Describe image" }).click();
+  await sleep(600);
+  const imgCall = calls.at(-1);
+  assert.ok(imgCall.messages[1].content.some((p) => p.type === "image_url" && p.image_url.url.startsWith("data:image/jpeg")), "image sent");
+  await page.getByRole("button", { name: "Close", exact: true }).first().click();
+  console.log("✓ drag Pixel → image → screenshot goes to the model");
+
+  // ---- 3) lasso the paragraph, then click Scout
+  await sw.evaluate(async () => { for (const t of await chrome.tabs.query({})) chrome.tabs.sendMessage(t.id, { type: "lasso" }).catch(() => {}); });
+  await sleep(200);
+  const p = await page.locator("#p").boundingBox();
+  await page.mouse.move(p.x - 10, p.y - 8);
+  await page.mouse.down();
+  for (const [x, y] of [[p.x + p.width + 10, p.y - 8], [p.x + p.width + 10, p.y + p.height + 8], [p.x - 10, p.y + p.height + 8], [p.x - 10, p.y]]) await page.mouse.move(x, y, { steps: 8 });
+  await page.mouse.up();
+  await sleep(500);
+  await shot(page, "6-lasso-pick");
+  await page.mouse.click(pet(0).x, pet(0).y);
+  await sleep(300);
+  await shot(page, "7-scout-card-on-lasso");
+  await page.getByRole("button", { name: "Summarize" }).click();
+  await sleep(600);
+  const lassoCall = calls.at(-1);
+  assert.match(lassoCall.messages[1].content[0].text, /Maya owns the release notes/);
+  await shot(page, "8-summary");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  console.log("✓ lasso → click Scout → summarize");
+
+  // ---- 4) search bar still works
+  await page.locator("#p").selectText();
+  await sw.evaluate(async () => { for (const t of await chrome.tabs.query({})) chrome.tabs.sendMessage(t.id, { type: "summon" }).catch(() => {}); });
+  await sleep(250);
+  await page.keyboard.type("dat");
+  await sleep(100);
+  await shot(page, "9-search");
+  await page.keyboard.press("Escape");
+  console.log("✓ search bar");
+
+  // ---- 5) fake Figma: drag Pixel onto the canvas → approve & post comment
+  const fig = await ctx.newPage();
+  await fig.goto("https://www.figma.com/design/AbC123/Checkout?node-id=12-34");
+  await sleep(700);
+  const fxs = [];
+  for (let x = 300; x < 800; x += 4) if ((await fig.evaluate(([x]) => document.elementFromPoint(x, innerHeight - 60)?.tagName, [x])) === "SKILL-PET-ROOT") fxs.push(x);
+  const fpet = (i) => ({ x: fxs[0] + 18 + 26 + i * 70, y: 760 - 14 - 8 - 32 - 24 });
+  await fig.mouse.move(fpet(2).x, fpet(2).y);
+  await fig.mouse.down();
+  await fig.mouse.move(430, 300, { steps: 12 });
+  await sleep(150);
+  await fig.screenshot({ path: SS + "10-figma-drag.png" });
+  await fig.mouse.up();
+  await sleep(900);
+  await fig.screenshot({ path: SS + "11-figma-card.png" });
+  await fig.getByRole("button", { name: "Leave critique as comment" }).click();
+  await sleep(700);
+  await fig.screenshot({ path: SS + "12-figma-approve.png" });
+  assert.equal(figmaComment, null, "nothing posted before approval");
+  await fig.getByRole("button", { name: "Approve & post comment" }).click();
+  await sleep(500);
+  assert.equal(figmaComment.token, "figd_test");
+  assert.deepEqual(figmaComment.body.client_meta, { node_id: "12:34", node_offset: { x: 0, y: 0 } });
+  assert.match(figmaComment.body.message, /Pay \$42/);
+  const figCall = calls.at(-1);
+  assert.match(figCall.messages[1].content[0].text, /Continue/, "frame text layers from the Figma API");
+  await fig.screenshot({ path: SS + "13-figma-posted.png" });
+  console.log("✓ Figma frame → approve → comment posted to node 12:34");
+
+  // ---- 6) Skill Studio
+  const studio = await ctx.newPage();
+  await studio.setViewportSize({ width: 1280, height: 1500 });
+  await studio.goto(`chrome-extension://${extId}/studio.html`);
+  await sleep(400);
+  await studio.screenshot({ path: SS + "14-studio.png" });
+  // drag "Pull dates" onto Pixel
+  const src = studio.locator(".skillrow", { hasText: "Pull dates" });
+  const dst = studio.locator(".pet", { has: studio.locator('input[value="Pixel"]') });
+  await src.dragTo(dst, { targetPosition: { x: 120, y: 30 } });
+  await sleep(300);
+  let stored = await sw.evaluate(() => chrome.storage.local.get("library"));
+  assert.ok(stored.library.pets.find((p) => p.id === "pixel").skillIds.includes("dates"), "drag skill onto pet");
+  console.log("✓ Studio: drag a skill onto a pet");
+  // new skill
+  await studio.getByRole("button", { name: "+ New skill" }).click();
+  await studio.fill("#fName", "Make it pirate");
+  await studio.fill("#fPrompt", "Rewrite this in pirate speak. Output only the rewrite.");
+  await studio.selectOption("#fAction", "replace");
+  await studio.check("#pet-quill");
+  await studio.fill("#tText", "Hello team, the build is green.");
+  await studio.click("#tRun");
+  await sleep(500);
+  await studio.screenshot({ path: SS + "15-studio-editor.png" });
+  await studio.click("#edSave");
+  await sleep(300);
+  stored = await sw.evaluate(() => chrome.storage.local.get("library"));
+  const made = stored.library.skills.find((s) => s.name === "Make it pirate");
+  assert.ok(made && made.accepts.includes("editable"));
+  assert.ok(stored.library.pets.find((p) => p.id === "quill").skillIds.includes(made.id));
+  await studio.screenshot({ path: SS + "16-studio-after.png" });
+  console.log("✓ Studio: new skill saved and taught to Quill");
+
+  srv.close();
+  await ctx.close();
+  console.log("all e2e checks passed");
+})().catch((e) => { console.error(e); process.exit(1); });

@@ -14,7 +14,8 @@
 </head>
 <body>
 <h1>Skill Pet</h1>
-<p><small>Your key is stored only in this browser profile (<code>chrome.storage.local</code>) and sent only to openrouter.ai. MVP only: a real release would go through a backend.</small></p>
+<p><a href="studio.html"><b>Open Skill Studio →</b></a> <small>(make skills, stickers and pets)</small></p>
+<p><small>Your key is stored only in this browser profile (<code>chrome.storage.local</code>) and sent only to openrouter.ai (and the Figma token only to api.figma.com). MVP only: a real release would go through a backend.</small></p>
 
 <label for="apiKey">OpenRouter API key</label>
 <input id="apiKey" type="password" autocomplete="off" placeholder="sk-or-v1-…">
@@ -31,13 +32,18 @@
   <option value="high">high</option>
 </select>
 
-<div class="row"><input id="peekEnabled" type="checkbox"><label for="peekEnabled">Peek when I select text</label></div>
+<label for="figmaToken">Figma personal access token <span style="font-weight:400">(optional)</span></label>
+<input id="figmaToken" type="password" autocomplete="off" placeholder="figd_…">
+<small>Lets pets read a selected Figma frame crisply and post approved comments on it. Make one in Figma › Settings › Security › Personal access tokens (file read + comments write). Without it, pets work from a screenshot.</small>
+
+<div class="row"><input id="squadVisible" type="checkbox"><label for="squadVisible">Show the pet squad on pages</label></div>
+<div class="row" style="margin-top:8px"><input id="peekEnabled" type="checkbox"><label for="peekEnabled">Peek when I select text</label></div>
 
 <label for="peekBlocked">Never peek on these sites (one per line)</label>
 <textarea id="peekBlocked" rows="4" placeholder="mail.google.com"></textarea>
 
 <button id="save" type="button">Save</button><span id="status" role="status"></span>
-<p><small>Shortcuts: <b>Alt+Shift+P</b> summons the command bar, <b>Alt+Shift+R</b> reruns your last skill. Change them at <code>chrome://extensions/shortcuts</code>.</small></p>
+<p><small>Shortcuts: <b>Alt+Shift+P</b> search skills, <b>Alt+Shift+L</b> lasso, <b>Alt+Shift+S</b> show/hide the squad, <b>Alt+Shift+R</b> rerun the last skill. Change them at <code>chrome://extensions/shortcuts</code>.</small></p>
 <script src="dist/options.js"></script>
 </body>
 </html>
