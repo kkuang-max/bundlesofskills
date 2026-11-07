@@ -1,11 +1,12 @@
 // History log of everything the pets generated, from pages and from the Studio's
 // "Try it". Pure helpers + a serialized writer so concurrent runs can't clobber
 // each other. Stored in chrome.storage.local "history", newest first.
+import { redact } from "./security.js";
 
 export const HISTORY_CAP = 300;
 const MAX_TEXT = 4000;
 
-/** @typedef {"running"|"done"|"error"|"stopped"|"approved"|"posted"|"discarded"} Status */
+/** @typedef {"running"|"done"|"error"|"stopped"|"approved"|"posted"|"discarded"|"blocked"} Status */
 
 const clip = (s, n = MAX_TEXT) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
 
@@ -30,13 +31,15 @@ export function makeEntry({ id, source, context = {}, skill = null, pet = null, 
     title: context.title || "",
     app: context.app || "",
     picked: context.label || "",
-    input: clip(context.text, 1500),
+    // The log never keeps secrets or personal data, even when the user chose to send them.
+    input: clip(redact(context.text || "").text, 1500),
     images: (context.images || []).length,
     output: "",
     status: "running",
     error: "",
     final: "", // the text actually applied/posted after approval (may be edited)
     ms: 0,
+    security: null, // {sentTo, input:{groups,decision}, redacted, output:{groups}}
   };
 }
 
@@ -67,6 +70,7 @@ export const STATUS_LABEL = {
   approved: "Approved & applied",
   posted: "Posted to Figma",
   discarded: "Discarded",
+  blocked: "Stopped by Security",
 };
 
 export function timeAgo(ts, now = Date.now()) {

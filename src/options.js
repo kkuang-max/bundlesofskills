@@ -1,6 +1,6 @@
 import { DEFAULTS as MODEL_DEFAULTS } from "./openrouter.js";
 
-const DEFAULTS = { apiKey: "", ...MODEL_DEFAULTS, peekEnabled: true, peekBlocked: [], figmaToken: "", squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", pinsEnabled: true };
+const DEFAULTS = { apiKey: "", ...MODEL_DEFAULTS, peekEnabled: true, peekBlocked: [], figmaToken: "", squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", pinsEnabled: true, securityGuard: true };
 const $ = (id) => document.getElementById(id);
 
 chrome.storage.local.get(DEFAULTS).then((s) => {
@@ -13,6 +13,7 @@ chrome.storage.local.get(DEFAULTS).then((s) => {
   $("squadCollapsed").checked = s.squadCollapsed;
   $("squadMiniStyle").value = s.squadMiniStyle;
   $("pinsEnabled").checked = s.pinsEnabled;
+  $("securityGuard").checked = s.securityGuard;
   $("peekBlocked").value = s.peekBlocked.join("\n");
 });
 
@@ -27,6 +28,7 @@ $("save").addEventListener("click", async () => {
     squadCollapsed: $("squadCollapsed").checked,
     squadMiniStyle: $("squadMiniStyle").value,
     pinsEnabled: $("pinsEnabled").checked,
+    securityGuard: $("securityGuard").checked,
     peekBlocked: $("peekBlocked").value.split(/\s+/).map((h) => h.trim()).filter(Boolean),
   });
   $("status").textContent = "Saved";

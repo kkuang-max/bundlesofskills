@@ -29,6 +29,7 @@ import { STATUS_LABEL, filterHistory, timeAgo } from "./history.js";
 import { renderAnswer } from "./answer-view.js";
 import { crop, findTemplate, packTemplate, resize as resizeGray, scaleRange, unpackTemplate } from "./track.js";
 import { MARKDOWN_CSS, copyRich } from "./markdown.js";
+import { stripHidden } from "./security.js";
 
 const PEEK_MIN_CHARS = 12;
 const PEEK_TIMEOUT_MS = 4000;
@@ -38,21 +39,21 @@ const BLOCKS = "p,li,h1,h2,h3,h4,h5,h6,blockquote,pre,td,th,dd,dt,figcaption,sum
 // ---------------------------------------------------------------- state
 let lib = normalizeLibrary(null);
 let usage = {};
-let prefs = { peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", pinsEnabled: true };
+let prefs = { peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", pinsEnabled: true, securityGuard: true };
 let lastRun = null;
 let picked = null; // what the select tool picked: {rect, ctx, target, svg, chip}
 
-chrome.storage.local.get({ library: null, usage: {}, peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", pinsEnabled: true, lastRun: null }).then((s) => {
+chrome.storage.local.get({ library: null, usage: {}, peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", pinsEnabled: true, securityGuard: true, lastRun: null }).then((s) => {
   lib = normalizeLibrary(s.library);
   usage = s.usage;
   lastRun = s.lastRun;
-  prefs = { peekEnabled: s.peekEnabled, peekBlocked: s.peekBlocked, squadVisible: s.squadVisible, squadCollapsed: s.squadCollapsed, squadMiniStyle: s.squadMiniStyle, pinsEnabled: s.pinsEnabled };
+  prefs = { peekEnabled: s.peekEnabled, peekBlocked: s.peekBlocked, squadVisible: s.squadVisible, squadCollapsed: s.squadCollapsed, squadMiniStyle: s.squadMiniStyle, pinsEnabled: s.pinsEnabled, securityGuard: s.securityGuard };
   renderDock();
   loadPins();
 });
 chrome.storage.onChanged.addListener((ch) => {
   if (ch.library) lib = normalizeLibrary(ch.library.newValue); // Studio edits apply live
-  for (const k of ["peekEnabled", "peekBlocked", "squadVisible", "squadCollapsed", "squadMiniStyle", "pinsEnabled"]) if (ch[k]) prefs[k] = ch[k].newValue;
+  for (const k of ["peekEnabled", "peekBlocked", "squadVisible", "squadCollapsed", "squadMiniStyle", "pinsEnabled", "securityGuard"]) if (ch[k]) prefs[k] = ch[k].newValue;
   if (ch.pinsEnabled) renderPins();
   if (ch.library) renderPins();
   if (ch.library || ch.squadVisible || ch.squadCollapsed || ch.squadMiniStyle) renderDock();
@@ -237,6 +238,28 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 .result.big .diff{max-height:none;flex:1}
 .result.big .diff textarea{min-height:40vh}
 .result .head .grow{flex:1;min-width:0}
+/* Security guard */
+.guard{padding:14px 14px 4px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+.g-top{display:flex;align-items:center;gap:12px}
+.g-top svg{flex:none}
+.g-title{font-weight:700;font-size:14px}
+.g-sub{font-size:12px;color:#5E5B66}
+.g-list{list-style:none;margin:0;padding:0;border-radius:12px;background:#F6F5FA;max-height:30vh;overflow:auto}
+.g-list li{display:flex;align-items:center;gap:10px;padding:7px 12px;font-size:12.5px}
+.g-list li + li{border-top:1px solid #ECEAF2}
+.g-list .g-what{flex:1;min-width:0}
+.g-list code{font:11.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:#5E5B66;background:#fff;border-radius:6px;padding:1px 6px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-sev{font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 8px;background:#FBF1DE;color:#7A4A12}
+.g-sev.high{background:#FBE7EA;color:#9B2C3A}
+.g-acts{display:flex;gap:6px;flex-wrap:wrap;padding:6px 0 10px}
+.g-acts button{padding:8px 13px;border-radius:9px;border:1px solid #E3DFD6;font-weight:700;font-size:12.5px}
+.g-acts button.primary{background:#4F5FE6;border-color:#4F5FE6;color:#fff}
+.gbanner{display:flex;gap:10px;align-items:flex-start;margin:10px 14px 0;padding:9px 12px;border-radius:12px;background:#FBF1DE;color:#6B4510;font-size:12.5px;line-height:1.45}
+.gbanner svg{flex:none}
+.gbanner b{display:block;color:#4A2F0A}
+.gbanner.ok{background:#E7F4EE;color:#245E46}
+.gbanner.ok b{color:#1E4F3A}
+.gbanner button{margin-top:6px;padding:4px 10px;border-radius:8px;border:1px solid rgba(0,0,0,.12);background:#fff;font-weight:700;font-size:12px}
 .x.expand{margin-left:auto;display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border-radius:8px;color:#5E5B66}
 .x.expand:hover,.x.expand[aria-pressed=true]{background:#F2EFE9;color:#1B1A1F}
 .x.expand + .x{margin-left:0}
@@ -2062,13 +2085,14 @@ let activePort = null;
 let tickTimer = 0;
 
 /** The loading state shown until the first words arrive. */
-function loader(pet, ctx, verb) {
+function loader(pet, ctx, verb, onDevice = false) {
   const n = (ctx.images || []).length;
   const what = [ctx.text ? `${ctx.text.trim().split(/\s+/).length} words` : "", n ? `${n} image${n > 1 ? "s" : ""}` : ""].filter(Boolean).join(" + ") || "your request";
+  const where = onDevice ? "Checking on this device. Nothing is sent anywhere." : `Sending ${what} to the model (openrouter.ai)${prefs.securityGuard !== false ? ", after a Security check" : ""}`;
   return el("div", { class: "loading", role: "status", "aria-live": "polite" }, [
     el("div", { class: "ld-top" }, [
       el("span", { class: "ld-pet", html: petSvg(pet || "#FFB86B", 40, true) }),
-      el("div", {}, [el("div", { class: "ld-title", text: `${pet ? pet.name : "The pet"} is ${verb}…` }), el("div", { class: "ld-sub", text: `Sending ${what} to the model` })]),
+      el("div", {}, [el("div", { class: "ld-title", text: `${pet ? pet.name : "The pet"} is ${verb}…` }), el("div", { class: "ld-sub", text: where })]),
       el("span", { class: "ld-time", text: "0s" }),
     ]),
     el("div", { class: "skel", "aria-hidden": "true" }, [el("i"), el("i"), el("i"), el("i")]),
@@ -2101,7 +2125,7 @@ function run(ctx, target, opts) {
         proposal,
       ])
     : out;
-  const load = loader(pet, ctx, action === "replace" ? "rewriting" : action === "comment" ? "drafting a comment" : "thinking");
+  const load = loader(pet, ctx, skill?.local ? "checking" : action === "replace" ? "rewriting" : action === "comment" ? "drafting a comment" : "thinking", Boolean(skill?.local));
 
   const status = el("span", { class: "note", role: "status" });
   const approve = proposing ? el("button", { class: "ok", text: canReplace ? "Approve & replace" : "Approve & post comment", hidden: true }) : null;
@@ -2140,7 +2164,8 @@ function run(ctx, target, opts) {
     const sec = Math.round((Date.now() - t0) / 1000);
     const t = load.querySelector(".ld-time");
     if (t) t.textContent = `${sec}s`;
-    if (!load.isConnected) status.textContent = `Generating… ${sec}s`;
+    if (waiting) status.textContent = "Waiting for your choice";
+    else if (!load.isConnected) status.textContent = `Generating… ${sec}s`;
   };
   tickTimer = setInterval(tick, 500);
 
@@ -2156,11 +2181,35 @@ function run(ctx, target, opts) {
   };
 
   let text = "";
+  let securityNote = "";
+  let outputFlags = null;
+  let waiting = false; // Security is asking; nothing is generating
   const port = chrome.runtime.connect({ name: "run-skill" });
   activePort = port;
   port.onMessage.addListener((m) => {
-    if (m.type === "started") historyId = m.historyId;
-    else if (m.type === "delta") {
+    if (m.type === "started") {
+      historyId = m.historyId;
+      if (m.redacted) securityNote = `Security masked ${m.redacted} item${m.redacted > 1 ? "s" : ""} before sending.`;
+    } else if (m.type === "guard" && m.phase === "input") {
+      // Security paused the run: nothing has left the browser yet.
+      const g = guardPanel(m.summary, (choice) => {
+        port.postMessage({ type: "guard-decision", choice });
+        waiting = false;
+        if (choice === "cancel") return;
+        stop.hidden = false;
+        g.replaceWith(load);
+      });
+      (load.isConnected ? load : body).replaceWith(g);
+      stop.hidden = true;
+      waiting = true;
+    } else if (m.type === "guard" && m.phase === "output") {
+      outputFlags = m.summary;
+      if (m.safeText != null) text = m.safeText; // Security removed links that carry data out
+    } else if (m.type === "blocked") {
+      panel.querySelector(".guard")?.replaceWith(el("div", { class: "out muted", text: "Stopped by Security. Nothing was sent." }));
+      finish(false);
+      approve?.remove();
+    } else if (m.type === "delta") {
       if (load.isConnected) load.replaceWith(body); // first words: swap the loader for the text
       text += m.text;
       if (proposing) proposal.value = text;
@@ -2174,6 +2223,14 @@ function run(ctx, target, opts) {
       if (load.isConnected) load.replaceWith(body);
       if (!proposing) renderAnswer(out, text, true);
       finish(true);
+      if (securityNote) body.before(guardBanner("ok", securityNote, "Only the masked version was sent. History keeps the masked version too."));
+      if (outputFlags) {
+        // Untrusted output: say what's off before anything is applied or posted.
+        const fix = proposing && outputFlags.items.some((i) => i.group === "hidden") ? { label: "Remove hidden text", run: () => (proposal.value = stripHidden(proposal.value)) } : null;
+        const removed = outputFlags.items.some((i) => i.group === "link" || i.group === "hidden");
+        body.before(guardBanner("warn", `Security flagged the result: ${outputFlags.groups.map((g) => `${g.label.toLowerCase()} (${g.n})`).join(", ")}`, (removed ? "Security removed links that send data out and any hidden text. " : "") + (proposing ? "Read it carefully before you approve." : "Be careful copying this into other tools."), fix));
+        if (approve) approve.textContent = canReplace ? "Approve anyway" : "Post anyway";
+      }
       // Leave the pet where it worked, so this answer stays reachable on the page.
       if (historyId) pinRun(ctx, pet, skill, label, historyId);
       if (approve) {
@@ -2229,6 +2286,43 @@ function run(ctx, target, opts) {
 }
 
 const spinner = () => el("span", { class: "spin", "aria-hidden": "true" });
+
+// ---------------------------------------------------------------- Security guard UI
+const guardPet = () => lib.pets.find((p) => p.species === "hedgehog") || { species: "hedgehog", color: "#B9D3EE", name: "Security" };
+const SHIELD = `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l5.5 2v4.2c0 3.3-2.3 5.7-5.5 6.8-3.2-1.1-5.5-3.5-5.5-6.8V3.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8l1.7 1.7 3.2-3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+/** Security found something in what's about to be sent: show it and ask. */
+function guardPanel(summary, onChoice) {
+  const n = summary.total;
+  const choose = (c) => () => onChoice(c);
+  return el("div", { class: "guard", role: "alertdialog", "aria-label": "Security check" }, [
+    el("div", { class: "g-top" }, [
+      el("span", { html: petSvg(guardPet(), 42) }),
+      el("div", {}, [
+        el("div", { class: "g-title", text: `${guardPet().name} found ${n} thing${n === 1 ? "" : "s"} before sending` }),
+        el("div", { class: "g-sub", text: `${summary.groups.map((g) => `${g.label} (${g.n})`).join(" · ")}. Nothing has left your browser yet.` }),
+      ]),
+    ]),
+    el("ul", { class: "g-list" }, summary.items.map((i) => el("li", {}, [
+      el("span", { class: "g-what", text: i.label }),
+      el("code", { text: i.preview }),
+      el("span", { class: "g-sev" + (i.severity === "high" ? " high" : ""), text: i.severity === "high" ? "High" : "Medium" }),
+    ]))),
+    el("div", { class: "g-acts" }, [
+      summary.redactable ? el("button", { class: "primary", text: "Redact & send", onclick: choose("redact") }) : null,
+      el("button", { class: summary.redactable ? "" : "primary", text: "Send anyway", onclick: choose("send") }),
+      el("button", { text: "Cancel", onclick: choose("cancel") }),
+    ]),
+  ]);
+}
+
+function guardBanner(kind, title, detail, fix = null) {
+  const b = el("div", { class: "gbanner" + (kind === "ok" ? " ok" : ""), role: "status" }, [
+    el("span", { html: SHIELD }),
+    el("div", {}, [el("b", { text: title }), detail, fix ? el("div", {}, [el("button", { text: fix.label, onclick: (e) => (fix.run(), (e.target.textContent = "Removed")) })]) : null]),
+  ]);
+  return b;
+}
 
 
 // ---------------------------------------------------------------- long answers

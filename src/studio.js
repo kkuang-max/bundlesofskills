@@ -83,7 +83,8 @@ const tint = (c, a) => {
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
 };
 const tagsFor = (s) => el("span", { class: "tags" }, s.accepts.map((k) => el("span", { class: "tag", text: SHORT_KIND[k] })));
-const resultFor = (s) => el("span", { class: `result ${RESULT[s.action][1]}`, text: RESULT[s.action][0] });
+// Security's on-device checks never reach the model, so say so where results are listed.
+const resultFor = (s) => (s.local ? el("span", { class: "result local", title: "Runs locally. Nothing is sent to the model.", text: "On this device" }) : el("span", { class: `result ${RESULT[s.action][1]}`, text: RESULT[s.action][0] }));
 const byFilter = (s, f) => f === "all" || s.accepts.includes(f);
 const matches = (s, q) => !q || `${s.name} ${s.prompt} ${s.sticker.label}`.toLowerCase().includes(q.toLowerCase());
 function chips(box, current, onPick) {
@@ -328,7 +329,7 @@ function skillCard(s) {
     el("hr"),
     el("dl", { class: "facts" }, [
       el("dt", { class: "muted", text: "Works on" }), el("dd", {}, [tagsFor(s)]),
-      el("dt", { class: "muted", text: "Result" }), el("dd", { text: RESULT[s.action][0] }),
+      el("dt", { class: "muted", text: "Result" }), el("dd", { text: s.local ? "A report, made on this device. Nothing is sent to the model." : RESULT[s.action][0] }),
       el("dt", { class: "muted", text: "Known by" }),
       el("dd", { class: "knownby" }, lib.pets.map((p) => {
         const has = p.skillIds.includes(s.id);
@@ -517,6 +518,7 @@ $("tRun").addEventListener("click", () => {
   ]));
   const timer = setInterval(() => (label.textContent = `Generating… ${Math.round((Date.now() - t0) / 1000)}s`), 500);
   let got = "";
+  let outFlag = null;
   const stopLoading = () => {
     clearInterval(timer);
     out.classList.remove("loading");
@@ -535,11 +537,35 @@ $("tRun").addEventListener("click", () => {
     if (m.type === "done") {
       stopLoading();
       renderAnswer(out, got, true);
-      out.append(el("div", { class: "muted", style: { fontSize: "11px", marginTop: "8px" }, text: "Saved to History" }));
+      if (outFlag) out.prepend(el("div", { class: "guardbox warn", text: `Security flagged the result: ${outFlag.groups.map((g) => g.label.toLowerCase()).join(", ")}` }));
+      out.append(el("div", { class: "muted", style: { fontSize: "11px", marginTop: "8px" }, text: m.onDevice ? "Checked on this device. Saved to History" : "Saved to History" }));
     }
     if (m.type === "stopped") {
       stopLoading();
       if (!got) out.textContent = "Stopped.";
+    }
+    if (m.type === "guard" && m.phase === "input") {
+      // Security paused the test: nothing has left the browser yet.
+      const sm = m.summary;
+      const pick = (choice) => () => {
+        tryPort.postMessage({ type: "guard-decision", choice });
+        if (choice !== "cancel") out.replaceChildren(el("div", { class: "muted", text: "Sending…" }));
+      };
+      out.classList.remove("loading");
+      out.replaceChildren(el("div", { class: "guardbox" }, [
+        el("b", { text: `Security found ${sm.total} thing${sm.total === 1 ? "" : "s"} before sending` }),
+        el("div", { class: "muted", text: sm.items.map((i) => `${i.label}: ${i.preview}`).join(" · ") }),
+        el("div", { class: "row", style: { gap: "6px", marginTop: "8px" } }, [
+          sm.redactable ? el("button", { class: "btn small primary", type: "button", text: "Redact & send", onclick: pick("redact") }) : null,
+          el("button", { class: "btn small", type: "button", text: "Send anyway", onclick: pick("send") }),
+          el("button", { class: "btn small", type: "button", text: "Cancel", onclick: pick("cancel") }),
+        ]),
+      ]));
+    }
+    if (m.type === "guard" && m.phase === "output") outFlag = m.summary;
+    if (m.type === "blocked") {
+      stopLoading();
+      out.textContent = "Stopped by Security. Nothing was sent.";
     }
     if (m.type === "error") {
       stopLoading();
@@ -557,6 +583,20 @@ $("tRun").addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------- history
+/** The audit line Security leaves on each run: where it went, what was found, what you chose. */
+function securityLine(sec) {
+  if (!sec) return "";
+  if (sec.sentTo === "on-device") return "Security: checked on this device, nothing sent";
+  const parts = [];
+  if (sec.input) {
+    const found = sec.input.groups.map((g) => `${g.label.toLowerCase()} (${g.n})`).join(", ");
+    const did = { redact: sec.redacted ? `masked ${sec.redacted} before sending` : "masked before sending", send: "you sent it anyway", cancel: "you stopped it, nothing sent" }[sec.input.decision];
+    parts.push(`found ${found}; ${did}`);
+  }
+  if (sec.output) parts.push(`flagged the result: ${sec.output.groups.map((g) => g.label.toLowerCase()).join(", ")}`);
+  if (!parts.length) return sec.guard ? `Security: checked, nothing found · sent to ${sec.sentTo}` : "";
+  return `Security: ${parts.join(" · ")}`;
+}
 let hSource = "";
 let historyCache = [];
 async function loadHistory() {
@@ -595,6 +635,7 @@ function historyCard(e) {
           e.source === "studio" ? " · Studio test" : " · ",
           e.source === "page" && e.url ? el("a", { href: e.url, target: "_blank", rel: "noopener", text: e.title || e.host }) : null,
         ]),
+        securityLine(e.security) ? el("div", { class: "hsec", text: securityLine(e.security) }) : null,
       ]),
       el("span", { class: `hstat s-${e.status}` }, [e.status === "running" ? el("span", { class: "spin", "aria-hidden": "true" }) : null, STATUS_LABEL[e.status] || e.status]),
     ]),

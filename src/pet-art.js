@@ -11,6 +11,7 @@ export const SPECIES = {
   bunny: { label: "Bunny", color: "#F6B3C6" },
   bear: { label: "Bear", color: "#ABC4F0" },
   ghost: { label: "Ghost", color: "#F8C3A0" },
+  hedgehog: { label: "Hedgehog", color: "#B9D3EE" },
 };
 export const SPECIES_IDS = Object.keys(SPECIES);
 
@@ -73,6 +74,26 @@ const DRAW = {
     const body = `<path d="M12 34c0-13 9-22 20-22s20 9 20 22v21c-2.5-3-5-3-7 0s-4.5 3-6.5 0-4.5-3-6.5 0-4.5 3-6.5 0-4.5-3-6.5 0-4.5 3-7 0z" fill="${c}" ${line}/>${gloss(21, 23)}${cheeks(39, 19, 45)}`;
     return [body, ...faces([[25, 32], [39, 32]], smile(32, 39, 4.5), grin(32, 38.5, 5.5))];
   },
+};
+
+// Hedgehog quills: a zigzag crown around the top of the head.
+function quills(cx, cy, rOut, rIn, from, to, n) {
+  const pts = [];
+  for (let i = 0; i <= n * 2; i++) {
+    const a = ((from + ((to - from) * i) / (n * 2)) * Math.PI) / 180;
+    const r = i % 2 ? rOut : rIn;
+    pts.push(`${(cx + r * Math.cos(a)).toFixed(1)} ${(cy - r * Math.sin(a)).toFixed(1)}`);
+  }
+  return `M${pts.join("L")}`;
+}
+DRAW.hedgehog = (c) => {
+  const back = darker(c);
+  const face = lighter(c);
+  const body = `<path d="${quills(32, 38, 25.5, 20.5, 196, -16, 8)}Z" fill="${back}" ${line}/>` +
+    `<path d="M11 39C11 26 20 19 32 19S53 26 53 39C53 50 44 56 32 56S11 50 11 39Z" fill="${c}" ${line}/>` +
+    `<path d="M18 42c0-7 6-12 14-12s14 5 14 12-6 11-14 11-14-4-14-11z" fill="${face}"/>` +
+    `${gloss(21, 28)}${cheeks(46, 20, 44)}<ellipse cx="32" cy="44" rx="2.6" ry="1.9" fill="${INK}"/>`;
+  return [body, ...faces([[26, 38.5], [38, 38.5]], smile(32, 48, 4.5), grin(32, 47.5, 5.5))];
 };
 
 const safe = (c, fallback) => (/^#[0-9a-fA-F]{3,8}$/.test(c || "") ? c : fallback);

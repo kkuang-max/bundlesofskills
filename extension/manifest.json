@@ -62,6 +62,17 @@
     }
   },
   "action": {
-    "default_title": "Open Skill Studio"
+    "default_title": "Open Skill Studio",
+    "default_icon": {
+      "16": "brand/icon-16.png",
+      "32": "brand/icon-32.png",
+      "48": "brand/icon-48.png"
+    }
+  },
+  "icons": {
+    "16": "brand/icon-16.png",
+    "32": "brand/icon-32.png",
+    "48": "brand/icon-48.png",
+    "128": "brand/icon-128.png"
   }
 }
