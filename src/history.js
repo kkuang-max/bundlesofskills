@@ -10,13 +10,13 @@ const MAX_TEXT = 4000;
 const clip = (s, n = MAX_TEXT) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
 
 /** Build a log entry from a run request. */
-export function makeEntry({ id, source, context = {}, skill = null, pet = null, instruction = "", request = "" }) {
+export function makeEntry({ id, source, context = {}, skill = null, pet = null, instruction = "", label = "", request = "" }) {
   return {
     id,
     at: Date.now(),
     source, // "page" | "studio"
     skillId: skill?.id || null,
-    skillName: skill?.name || instruction || "Ask",
+    skillName: skill?.name || label || instruction || "Ask",
     sticker: skill?.sticker || null,
     action: skill?.action || "answer",
     petId: pet?.id || null,

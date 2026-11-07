@@ -107,7 +107,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
     // Log the run before it starts, so the history shows it while it's generating.
     const id = `h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const entry = makeEntry({ id, source: msg.source === "studio" ? "studio" : "page", context: msg.context, skill, pet, instruction: msg.instruction, request: msg.request });
+    const entry = makeEntry({ id, source: msg.source === "studio" ? "studio" : "page", context: msg.context, skill, pet, instruction: msg.instruction, label: msg.label, request: msg.request });
     await mutateHistory((h) => addEntry(h, entry));
     post({ type: "started", historyId: id });
     const t0 = Date.now();

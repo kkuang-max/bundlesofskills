@@ -6,20 +6,21 @@ A Chrome extension prototype of the **Skill Companion** concepts. You keep a **s
 
 ### 1. Skill Studio: make skills, stickers and pets
 
-Open it by clicking the extension's toolbar icon, or from Options. Everything is on one page:
+Open it from the extension's toolbar icon, or from Options. Three tabs sit next to **Import · Export · Settings · + New skill**:
 
-- **Skills.** 19 templates, plus your own. Each skill has:
-  - an instruction
-  - **Works on**: text, editable text, images, Figma frames
-  - **Result**: show an answer, rewrite the original after you approve, or leave a Figma comment after you approve
-  - which apps it ranks higher in
-  - a **sticker** (label, color, shape)
+- **Pets**
+  - A rail of your pets on the left, plus **Adopt**. You can also drag a skill card onto a pet in the rail to teach it.
+  - The selected pet's card has a hero header (character, editable name and role, one line on what it carries and reads).
+  - **Skills list:** each row shows the sticker, kind tags and result (Answer, **Rewrites**, **Comments**). Expand a row for the instruction, what it works on, its result and which other pets know it, plus *Edit skill* and *Remove from Scout*.
+  - **Settings:** look (character and color), *Can read* switches, *First in*, and *Release*.
+- **+ Add skills** opens a side drawer: search, filter by Text, Editable, Images or Figma, tick several skills, then **Add N to Scout**.
+- **All skills**
+  - **Cards** view, split into *Yours* (with *Make a skill*) and *Templates*. Each card shows the instruction, *Works on*, *Result*, and **Known by**: tap a pet's face to give or take that skill.
+  - **Stickers** view shows every skill as a big sticker.
+- **History:** everything generated, filterable and searchable.
+- **The skill editor:** instruction, works-on, result, ranking, which pets know it, a sticker designer (label, color, shape), and **Try it** with text or an image.
 
-  Use `{{request}}` in an instruction to ask for details when the skill runs ("Rewrite this: {{request}}"). Every skill has a **Try it** box (paste text and/or add an image). Templates can be edited and reset.
-- **Pet squad = skill groups.** Drag a skill from the list onto a pet to teach it; × removes it. Each pet has a name, role and color. It also has **permissions**: *can read text*, *can read images & frames*. A pet is never sent what it isn't allowed to read. You can also set which app a pet comes first in. *Adopt* makes a new pet; *Release* removes one.
-- **Import / Export** the whole library as JSON to share a squad.
-
-Edits apply to open tabs immediately; no rebuild.
+The look follows the design mockups: cool grey background, white rounded cards, indigo accent, the *M PLUS Rounded 1c* typeface, pill tags, and green labels for actions that change things.
 
 ### Characters
 
@@ -30,7 +31,7 @@ Each pet is one of seven characters: **cat, dog, bird, frog, bunny, bear, ghost*
 | Do this | What happens |
 |---|---|
 | **Drag a pet** onto something | A dashed outline shows what it will read ("Text", "Image", "Text field", "Selected Figma frame", "This page (screenshot)"). Drop, and the **pet card** opens with that pet's skills that fit, plus an *Ask Quill…* box. |
-| **Select** (dock button or **Alt+Shift+L**) | Like a design tool: hover highlights the paragraph, image, field or frame under the pointer, and **click** picks it. **Drag** a box to take exactly the words, images and canvas inside it. **Shift-click** adds more, and **Enter** finishes. Then drag a pet onto it, or press 1–9. |
+| **Select** (dock button or **Alt+Shift+L**) | Like a design tool: hover highlights the paragraph, image, field or frame under the pointer, and **click** picks it. **Drag** a box to take exactly the words, images and canvas inside it. **Shift-click** adds more, and **Enter** finishes. The selection then has **resize handles**: drag any corner or edge to grow or shrink it, and it re-reads exactly what's inside. Then drag a pet onto it, or press 1–9. |
 | **Click a pet** | Uses what you picked with Select, or else your text selection. |
 | **History** (dock button) | What the pets generated on this site (see below). |
 | **Search** (dock button or **Alt+Shift+P**) | The command bar from v1, now over every pet's skills, showing which pet owns each. |
@@ -154,7 +155,8 @@ npm run e2e
 - box-select a paragraph → click Scout → summarize
 - the search bar
 - a fake Figma file → drag Pixel onto the frame → approve → a comment is posted to node `12:34` with the frame's text layers in the prompt
-- Studio: drag a skill onto a pet, create a new skill and assign it
+- Studio: Pets view (rail, Add skills drawer adds two skills, accordion details), All skills *Known by* toggle, Stickers view, create a new skill and assign it
+- resizing a selection with its handles re-reads the new area
 - minimize to small pets / dots, expand on hover, selection and Select, hover cards, Alt+1 / 1–9 / Alt-drag box select / click + Shift-click select / Alt+/;
 - the selection stays pinned to the paragraph when scrolling and is still a drop target; the page scrolls under the Select tool;
 - answers render as Markdown (heading, bold, table, checklist), no raw syntax;

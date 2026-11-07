@@ -72,153 +72,293 @@ chrome.storage.onChanged.addListener((ch) => {
   }
 });
 
+// ---------------------------------------------------------------- shared bits
+const SHORT_KIND = { text: "Text", editable: "Editable", image: "Images", frame: "Figma" };
+const RESULT = { answer: ["Answer", ""], replace: ["Rewrites", "rw"], comment: ["Comments", "rw"] };
+const RESULT_LONG = { answer: "Shows an answer you can copy", replace: "Rewrites the original after you approve", comment: "Leaves a Figma comment after you approve" };
+const FILTERS = [["all", "All"], ["text", "Text"], ["editable", "Editable"], ["image", "Images"], ["frame", "Figma"]];
+const CHEVRON = `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 5.5L7 9l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const tint = (c, a) => {
+  const n = parseInt(safeColor(c).slice(1, 7), 16);
+  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+};
+const tagsFor = (s) => el("span", { class: "tags" }, s.accepts.map((k) => el("span", { class: "tag", text: SHORT_KIND[k] })));
+const resultFor = (s) => el("span", { class: `result ${RESULT[s.action][1]}`, text: RESULT[s.action][0] });
+const byFilter = (s, f) => f === "all" || s.accepts.includes(f);
+const matches = (s, q) => !q || `${s.name} ${s.prompt} ${s.sticker.label}`.toLowerCase().includes(q.toLowerCase());
+function chips(box, current, onPick) {
+  box.replaceChildren(...FILTERS.map(([k, l]) => el("button", { class: "chip", type: "button", "aria-pressed": String(current === k), text: l, onclick: () => onPick(k) })));
+}
+function avatar(pet, size, ring = false) {
+  return el("span", { class: "av", style: { width: `${size}px`, height: `${size}px`, background: tint(pet.color, 0.32), boxShadow: ring ? `0 0 0 2px ${pet.color}` : "" }, html: petSvg(pet, Math.round(size * 0.82)) });
+}
+
 // ---------------------------------------------------------------- render
+let view = "pets";
+let selPetId = null;
+const openRows = new Set();
+let layout = "cards";
+
 function render() {
+  if (!lib.pets.some((p) => p.id === selPetId)) selPetId = lib.pets[0]?.id || null;
+  renderRail();
+  renderPetCard();
   renderLibrary();
-  renderSquad();
 }
 
-function renderFilters() {
-  const opts = [["all", "All"], ...KINDS.map((k) => [k, KIND_LABEL[k]])];
-  $("filters").replaceChildren(
-    ...opts.map(([k, label]) =>
-      el("button", { class: "chip", type: "button", "aria-pressed": String(filter === k), text: label, onclick: () => ((filter = k), renderLibrary()) }),
-    ),
+// ---------------------------------------------------------------- Pets view
+function renderRail() {
+  $("rail").replaceChildren(
+    ...lib.pets.map((pet) => {
+      const b = el("button", { type: "button", "aria-current": String(pet.id === selPetId), "aria-label": `${pet.name}, ${pet.role}`, style: { "--ring": tint(pet.color, 0.9) }, onclick: () => ((selPetId = pet.id), openRows.clear(), render()) }, [avatar(pet, 58), el("span", { text: pet.name })]);
+      // Drop a skill (from All skills) onto a pet in the rail to teach it.
+      b.addEventListener("dragover", (e) => [...e.dataTransfer.types].includes("application/x-skill-id") && (e.preventDefault(), b.classList.add("drop-over")));
+      b.addEventListener("dragleave", () => b.classList.remove("drop-over"));
+      b.addEventListener("drop", (e) => {
+        e.preventDefault();
+        b.classList.remove("drop-over");
+        teach(pet, [e.dataTransfer.getData("application/x-skill-id")]);
+      });
+      return b;
+    }),
+    el("button", { type: "button", class: "adopt", onclick: adoptPet, "aria-label": "Adopt a new pet" }, [el("span", { class: "av", text: "+" }), el("span", { text: "Adopt" })]),
   );
 }
 
-function skillRow(s) {
-  const owners = lib.pets.filter((p) => p.skillIds.includes(s.id)).map((p) => p.name);
-  // A div, not a <button>: Chromium won't start an HTML5 drag from a button.
-  const row = el("div", { class: "skillrow", role: "button", tabindex: "0", draggable: "true", "aria-label": `${s.name}. Edit, or drag onto a pet.`, onclick: () => openEditor(s.id), onkeydown: (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openEditor(s.id)) }, [
-    sticker(s.sticker),
-    el("span", { class: "txt" }, [
-      el("div", { class: "nm", text: s.name }),
-      el("div", { class: "meta", text: s.prompt }),
+function teach(pet, ids) {
+  const add = ids.filter((id) => id && lib.skills.some((s) => s.id === id) && !pet.skillIds.includes(id));
+  if (!add.length) return toast(`${pet.name} already knows that`);
+  pet.skillIds.push(...add);
+  save(add.length === 1 ? `${pet.name} learned ${lib.skills.find((s) => s.id === add[0]).name}` : `${pet.name} learned ${add.length} skills`);
+}
+
+function renderPetCard() {
+  const pet = lib.pets.find((p) => p.id === selPetId);
+  const card = $("petCard");
+  if (!pet) return card.replaceChildren(el("p", { class: "empty-skills", text: "No pets yet. Adopt one." }));
+  const skills = pet.skillIds.map((id) => lib.skills.find((s) => s.id === id)).filter(Boolean);
+  const reads = [pet.canRead.text && "text", pet.canRead.images && "images & frames"].filter(Boolean).join(" and ") || "nothing";
+
+  const nameIn = el("input", { class: "nm", value: pet.name, "aria-label": "Pet name", maxlength: "24" });
+  nameIn.addEventListener("change", () => ((pet.name = nameIn.value.trim() || pet.name), save()));
+  const roleIn = el("input", { class: "rl", value: pet.role || "", "aria-label": `${pet.name}'s role`, maxlength: "24", placeholder: "Role" });
+  roleIn.addEventListener("change", () => ((pet.role = roleIn.value.trim()), save()));
+
+  const list = skills.length
+    ? el("div", { class: "acc" }, skills.map((s) => skillAccordion(pet, s)))
+    : el("div", { class: "empty-skills" }, [`${pet.name} doesn't know any skills yet. `, el("button", { class: "link", type: "button", text: "Add skills", onclick: () => openSheet(pet) })]);
+
+  const appSel = el("select", { "aria-label": `${pet.name} comes first in` }, [el("option", { value: "", text: "Anywhere" }), ...Object.entries(APPS).map(([k, v]) => el("option", { value: k, text: v, selected: pet.apps?.[0] === k }))]);
+  appSel.addEventListener("change", () => ((pet.apps = appSel.value ? [appSel.value] : []), save()));
+
+  card.style.setProperty("--tint", tint(pet.color, 0.28));
+  card.replaceChildren(
+    el("div", { class: "hero" }, [
+      el("div", { class: "hero-pet", html: petSvg(pet, 112) }),
+      el("div", { class: "names" }, [
+        nameIn,
+        roleIn,
+        el("p", { text: `Carries ${skills.length} skill${skills.length === 1 ? "" : "s"} and reads ${reads}. Drag ${pet.name} onto your work and it offers the skills that fit.` }),
+      ]),
     ]),
-    el("span", { class: "tag act", text: { answer: "Answer", replace: "Rewrite ✓", comment: "Comment ✓" }[s.action] }),
-    el("span", { class: "tag", text: owners.length ? owners.join(", ") : "No pet" }),
-  ]);
-  row.addEventListener("dragstart", (e) => {
-    e.dataTransfer.setData("application/x-skill-id", s.id);
-    e.dataTransfer.setData("text/plain", s.name);
-    e.dataTransfer.effectAllowed = "copy";
-    row.classList.add("dragging");
-  });
-  row.addEventListener("dragend", () => row.classList.remove("dragging"));
-  return row;
+    el("div", { class: "sect" }, [
+      el("div", { class: "sect-h" }, [el("h2", { text: `${pet.name}'s skills` }), el("button", { class: "btn primary small", type: "button", text: "+ Add skills", onclick: () => openSheet(pet) })]),
+      list,
+    ]),
+    el("div", { class: "sect" }, [
+      el("div", { class: "sect-h" }, [el("h2", { text: "Settings" })]),
+      el("div", { class: "settings" }, [
+        el("span", { class: "k", text: "Looks" }),
+        el("div", { class: "looks", role: "group", "aria-label": `${pet.name}'s character and color` }, [
+          ...SPECIES_IDS.map((sp) =>
+            el("button", {
+              class: "sp",
+              type: "button",
+              title: SPECIES[sp].label,
+              "aria-label": SPECIES[sp].label,
+              "aria-pressed": String(pet.species === sp),
+              html: petSvg({ species: sp, color: pet.species === sp ? pet.color : SPECIES[sp].color }, 28),
+              onclick: () => pet.species !== sp && ((pet.species = sp), (pet.color = SPECIES[sp].color), save(`${pet.name} is now a ${SPECIES[sp].label.toLowerCase()}`)),
+            }),
+          ),
+          el("span", { class: "gap" }),
+          ...PET_COLORS.map((c) => el("button", { class: "dot", type: "button", style: { background: c }, "aria-label": `Color ${c}`, "aria-pressed": String(pet.color === c), onclick: () => ((pet.color = c), save()) })),
+        ]),
+        el("span"),
+        el("span", { class: "k", text: "Can read" }),
+        el("div", {}, [
+          toggle(`${pet.id}-text`, "Text", pet.canRead.text, (v) => ((pet.canRead.text = v), save())),
+          toggle(`${pet.id}-img`, "Images & frames", pet.canRead.images, (v) => ((pet.canRead.images = v), save())),
+        ]),
+        el("span"),
+        el("span", { class: "k", text: "First in" }),
+        el("div", {}, [appSel]),
+        lib.pets.length > 1 ? el("button", { class: "link danger", type: "button", text: `Release ${pet.name}`, onclick: () => confirm(`Release ${pet.name}? Its skills stay in the library.`) && ((lib.pets = lib.pets.filter((p) => p !== pet)), save(`${pet.name} released`)) }) : el("span"),
+      ]),
+    ]),
+  );
+}
+function toggle(id, label, value, onchange) {
+  const c = el("input", { type: "checkbox", id, checked: value, role: "switch" });
+  c.addEventListener("change", () => onchange(c.checked));
+  return el("label", { class: "switch", for: id }, [label, c]);
 }
 
-function renderLibrary() {
-  renderFilters();
-  const q = $("q").value.trim().toLowerCase();
-  const shown = lib.skills.filter(
-    (s) => (filter === "all" || s.accepts.includes(filter)) && (!q || `${s.name} ${s.prompt} ${s.sticker.label}`.toLowerCase().includes(q)),
+function skillAccordion(pet, s) {
+  const open = openRows.has(s.id);
+  const others = lib.pets.filter((p) => p !== pet && p.skillIds.includes(s.id)).map((p) => p.name);
+  const bodyId = `acc-${s.id}`;
+  return el("div", { class: "acc-item" + (open ? " open" : "") }, [
+    el("button", { class: "acc-row", type: "button", "aria-expanded": String(open), "aria-controls": bodyId, onclick: () => (open ? openRows.delete(s.id) : openRows.add(s.id), renderPetCard()) }, [
+      sticker(s.sticker, 40),
+      el("span", { class: "nm", text: s.name }),
+      tagsFor(s),
+      resultFor(s),
+      el("span", { class: "chev", html: CHEVRON }),
+    ]),
+    open
+      ? el("div", { class: "acc-body", id: bodyId }, [
+          el("p", { class: "prompt", text: s.prompt }),
+          el("dl", { class: "facts" }, [
+            el("dt", { text: "Works on" }), el("dd", { text: s.accepts.map((k) => SHORT_KIND[k]).join(", ") }),
+            el("dt", { text: "Result" }), el("dd", { text: RESULT_LONG[s.action] }),
+            el("dt", { text: "Also known by" }), el("dd", { text: others.length ? others.join(", ") : "No other pets" }),
+          ]),
+          el("div", { class: "acc-actions" }, [
+            el("button", { class: "btn small ghost", type: "button", text: "Edit skill", onclick: () => openEditor(s.id) }),
+            el("button", { class: "link danger", type: "button", text: `Remove from ${pet.name}`, onclick: () => ((pet.skillIds = pet.skillIds.filter((x) => x !== s.id)), openRows.delete(s.id), save(`Removed ${s.name} from ${pet.name}`)) }),
+          ]),
+        ])
+      : null,
+  ]);
+}
+
+// ---------------------------------------------------------------- Add skills sheet
+let sheetPet = null;
+let sheetFilter = "all";
+const sheetSel = new Set();
+function openSheet(pet) {
+  sheetPet = pet;
+  sheetFilter = "all";
+  sheetSel.clear();
+  $("sq").value = "";
+  $("sheetTitle").textContent = `Add skills to ${pet.name}`;
+  $("sheetScrim").hidden = false;
+  $("addSheet").hidden = false;
+  renderSheet();
+  $("sq").focus();
+}
+function closeSheet() {
+  $("sheetScrim").hidden = true;
+  $("addSheet").hidden = true;
+  sheetPet = null;
+}
+function renderSheet() {
+  if (!sheetPet) return;
+  chips($("sFilters"), sheetFilter, (k) => ((sheetFilter = k), renderSheet()));
+  const q = $("sq").value.trim();
+  const items = lib.skills.filter((s) => !sheetPet.skillIds.includes(s.id) && byFilter(s, sheetFilter) && matches(s, q));
+  $("sheetList").replaceChildren(
+    ...(items.length
+      ? items.map((s) => {
+          const id = `pick-${s.id}`;
+          const box = el("input", { type: "checkbox", id, checked: sheetSel.has(s.id), "aria-label": `Add ${s.name}` });
+          const row = el("label", { class: "srow" + (sheetSel.has(s.id) ? " on" : ""), for: id }, [
+            sticker(s.sticker, 40),
+            el("span", { class: "txt" }, [el("div", { class: "nm", text: s.name }), el("div", { class: "desc", text: s.prompt })]),
+            el("span", { class: "meta" }, [tagsFor(s), resultFor(s)]),
+            box,
+          ]);
+          box.addEventListener("change", () => {
+            box.checked ? sheetSel.add(s.id) : sheetSel.delete(s.id);
+            row.classList.toggle("on", box.checked);
+            sheetFooter();
+          });
+          return row;
+        })
+      : [el("p", { class: "sheet-empty", text: sheetPet.skillIds.length === lib.skills.length ? `${sheetPet.name} already knows every skill.` : "Nothing matches." })]),
   );
+  sheetFooter();
+}
+function sheetFooter() {
+  const n = sheetSel.size;
+  $("sheetCount").textContent = `${n} selected`;
+  $("sheetAdd").disabled = !n;
+  $("sheetAdd").textContent = n ? `Add ${n} to ${sheetPet.name}` : `Add to ${sheetPet.name}`;
+}
+$("sq").addEventListener("input", renderSheet);
+$("sheetClose").addEventListener("click", closeSheet);
+$("sheetCancel").addEventListener("click", closeSheet);
+$("sheetScrim").addEventListener("click", closeSheet);
+$("sheetAdd").addEventListener("click", () => {
+  const pet = sheetPet;
+  const ids = [...sheetSel];
+  closeSheet();
+  teach(pet, ids);
+});
+document.addEventListener("keydown", (e) => e.key === "Escape" && !$("addSheet").hidden && closeSheet());
+
+// ---------------------------------------------------------------- All skills view
+function renderLibrary() {
+  chips($("filters"), filter, (k) => ((filter = k), renderLibrary()));
+  $("layCards").setAttribute("aria-pressed", String(layout === "cards"));
+  $("layStickers").setAttribute("aria-pressed", String(layout === "stickers"));
+  const q = $("q").value.trim();
+  const shown = lib.skills.filter((s) => byFilter(s, filter) && matches(s, q));
   const mine = shown.filter((s) => !s.template);
   const tmpl = shown.filter((s) => s.template);
   $("libCount").textContent = `${lib.skills.length} skills`;
-  $("lib").replaceChildren(
-    el("div", { class: "group-h", text: `Your skills · ${mine.length}` }),
-    mine.length ? el("div", { class: "skills" }, mine.map(skillRow)) : el("p", { class: "muted", style: { fontSize: "13px", margin: "4px 0" }, text: "Nothing yet. Make one with + New skill, or edit a template below." }),
-    el("div", { class: "group-h", text: `Templates · ${tmpl.length}` }),
-    el("div", { class: "skills" }, tmpl.map(skillRow)),
-  );
+  const make = el("button", { class: "make", type: "button", onclick: () => openEditor(null) }, [el("span", { class: "plus", text: "+" }), "Make a skill"]);
+  const block = (items) => (layout === "cards" ? el("div", { class: "grid" }, items.map(skillCard)) : el("div", { class: "stickers" }, items.map(stickerCard)));
+  const yours = layout === "cards" ? el("div", { class: "grid" }, [make, ...mine.map(skillCard)]) : el("div", { class: "stickers" }, [...mine.map(stickerCard), el("button", { class: "stcard make", type: "button", onclick: () => openEditor(null) }, [el("span", { class: "plus", text: "+" }), "Make a skill"])]);
+  $("lib").replaceChildren(el("div", { class: "group-h", text: "Yours" }), yours, el("div", { class: "group-h", text: "Templates" }), tmpl.length ? block(tmpl) : el("p", { class: "muted", text: "No templates match." }));
 }
-
-function renderSquad() {
-  const cards = lib.pets.map((pet) => {
-    const members = pet.skillIds.map((id) => lib.skills.find((s) => s.id === id)).filter(Boolean);
-    const drop = el("div", { class: "drop", "aria-label": `${pet.name}'s skills` },
-      members.length
-        ? members.map((s) =>
-            el("div", { class: "member" }, [
-              sticker(s.sticker, 24),
-              el("span", { class: "nm", text: s.name }),
-              el("button", { type: "button", "aria-label": `Remove ${s.name} from ${pet.name}`, title: "Remove", text: "×", onclick: () => ((pet.skillIds = pet.skillIds.filter((x) => x !== s.id)), save()) }),
-            ]),
-          )
-        : [el("div", { class: "empty", text: "Drag skills here" })],
-    );
-    const card = el("div", { class: "pet" }, [
-      el("div", { class: "top" }, [
-        el("span", { class: "pet-face", html: petSvg(pet, 60) }),
-        el("div", { class: "names" }, [
-          input(pet, "name", `Name of ${pet.name}`),
-          input(pet, "role", `${pet.name}'s role`, "role"),
-        ]),
-      ]),
-      el("div", { class: "species", role: "group", "aria-label": `${pet.name}'s character` },
-        SPECIES_IDS.map((sp) =>
-          el("button", {
-            type: "button",
-            class: "sp",
-            title: SPECIES[sp].label,
-            "aria-label": `${SPECIES[sp].label}${pet.species === sp ? " (current)" : ""}`,
-            "aria-pressed": String(pet.species === sp),
-            html: petSvg({ species: sp, color: pet.species === sp ? pet.color : SPECIES[sp].color }, 30),
-            onclick: () => {
-              if (pet.species === sp) return;
-              pet.species = sp;
-              pet.color = SPECIES[sp].color;
-              save(`${pet.name} is now a ${SPECIES[sp].label.toLowerCase()}`);
-            },
-          }),
-        ),
-      ),
-      el("div", { class: "swatches", role: "group", "aria-label": `${pet.name}'s color` },
-        PET_COLORS.map((c) => el("button", { class: "sw", type: "button", style: { background: c }, "aria-label": `Color ${c}`, "aria-pressed": String(pet.color === c), onclick: () => ((pet.color = c), save()) })),
-      ),
-      drop,
-      el("div", { class: "perms" }, [
-        el("span", { text: "Can read:" }),
-        check(`${pet.id}-text`, "Text", pet.canRead.text, (v) => ((pet.canRead.text = v), save())),
-        check(`${pet.id}-img`, "Images & frames", pet.canRead.images, (v) => ((pet.canRead.images = v), save())),
-      ]),
-      el("div", { class: "bottom" }, [
-        el("label", { class: "apps" }, [
-          "Comes first in ",
-          (() => {
-            const sel = el("select", { "aria-label": `${pet.name} comes first in` }, [
-              el("option", { value: "", text: "—" }),
-              ...Object.entries(APPS).map(([k, v]) => el("option", { value: k, text: v, selected: pet.apps?.[0] === k })),
-            ]);
-            sel.addEventListener("change", () => ((pet.apps = sel.value ? [sel.value] : []), save()));
-            return sel;
-          })(),
-        ]),
-        lib.pets.length > 1 ? el("button", { class: "btn small danger", type: "button", text: "Release", onclick: () => confirm(`Release ${pet.name}? Its skills stay in the library.`) && ((lib.pets = lib.pets.filter((p) => p !== pet)), save(`${pet.name} released`)) }) : null,
-      ]),
-    ]);
-    // drag a skill onto the pet
-    card.addEventListener("dragover", (e) => {
-      if ([...e.dataTransfer.types].includes("application/x-skill-id")) {
-        e.preventDefault();
-        card.classList.add("over");
-      }
-    });
-    card.addEventListener("dragleave", (e) => {
-      if (!card.contains(e.relatedTarget)) card.classList.remove("over");
-    });
-    card.addEventListener("drop", (e) => {
-      e.preventDefault();
-      card.classList.remove("over");
-      const id = e.dataTransfer.getData("application/x-skill-id");
-      if (!id) return;
-      if (pet.skillIds.includes(id)) return toast(`${pet.name} already knows that`);
-      pet.skillIds.push(id);
-      save(`${pet.name} learned ${lib.skills.find((s) => s.id === id)?.name}`);
-    });
-    return card;
+function dragSkill(node, s) {
+  node.draggable = true;
+  node.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("application/x-skill-id", s.id);
+    e.dataTransfer.setData("text/plain", s.name);
+    e.dataTransfer.effectAllowed = "copy";
   });
-  const adopt = el("button", { class: "adopt", type: "button", onclick: adoptPet }, [el("span", { html: petSvg({ species: nextSpecies(), color: "#E3DFD6" }, 48) }), "Adopt a new pet"]);
-  $("squad").replaceChildren(...cards, adopt);
 }
-function input(pet, key, label, cls) {
-  const i = el("input", { type: "text", value: pet[key] || "", "aria-label": label, class: cls, maxlength: "24" });
-  i.addEventListener("change", () => ((pet[key] = i.value.trim() || pet[key]), save()));
-  return i;
+function skillCard(s) {
+  const card = el("div", { class: "scard", role: "button", tabindex: "0", "aria-label": `${s.name}. Open to edit.`, onclick: () => openEditor(s.id), onkeydown: (e) => (e.key === "Enter" || e.key === " ") && e.target === card && (e.preventDefault(), openEditor(s.id)) }, [
+    el("div", { class: "h" }, [sticker(s.sticker, 42), el("span", { text: s.name })]),
+    el("p", { class: "desc", text: s.prompt }),
+    el("hr"),
+    el("dl", { class: "facts" }, [
+      el("dt", { class: "muted", text: "Works on" }), el("dd", {}, [tagsFor(s)]),
+      el("dt", { class: "muted", text: "Result" }), el("dd", { text: RESULT[s.action][0] }),
+      el("dt", { class: "muted", text: "Known by" }),
+      el("dd", { class: "knownby" }, lib.pets.map((p) => {
+        const has = p.skillIds.includes(s.id);
+        return el("button", {
+          type: "button",
+          title: `${has ? "Take from" : "Give to"} ${p.name}`,
+          "aria-label": `${p.name} knows ${s.name}`,
+          "aria-pressed": String(has),
+          style: { "--pet-bg": tint(p.color, 0.35), "--pet-ring": p.color },
+          html: petSvg(p, 22),
+          onclick: (e) => {
+            e.stopPropagation();
+            p.skillIds = has ? p.skillIds.filter((x) => x !== s.id) : [...p.skillIds, s.id];
+            save(has ? `${p.name} forgot ${s.name}` : `${p.name} learned ${s.name}`);
+          },
+        });
+      })),
+    ]),
+  ]);
+  dragSkill(card, s);
+  return card;
 }
+function stickerCard(s) {
+  const b = el("button", { class: "stcard", type: "button", title: s.prompt, onclick: () => openEditor(s.id) }, [sticker(s.sticker, 76), el("span", { text: s.name })]);
+  dragSkill(b, s);
+  return b;
+}
+$("layCards").addEventListener("click", () => ((layout = "cards"), renderLibrary()));
+$("layStickers").addEventListener("click", () => ((layout = "stickers"), renderLibrary()));
+
 function check(id, label, value, onchange) {
   const c = el("input", { type: "checkbox", id, checked: value });
   c.addEventListener("change", () => onchange(c.checked));
@@ -230,8 +370,11 @@ function nextSpecies() {
 }
 function adoptPet() {
   const species = nextSpecies();
-  lib.pets.push({ id: uid("pet"), name: SPECIES[species].label, role: "Helper", species, color: SPECIES[species].color, skillIds: [], canRead: { text: true, images: true }, apps: [] });
-  save("Adopted! Name it and drag skills onto it.");
+  const pet = { id: uid("pet"), name: SPECIES[species].label, role: "Helper", species, color: SPECIES[species].color, skillIds: [], canRead: { text: true, images: true }, apps: [] };
+  lib.pets.push(pet);
+  selPetId = pet.id;
+  showTab("pets");
+  save("Adopted! Name it and add some skills.");
 }
 
 // ---------------------------------------------------------------- editor
@@ -490,17 +633,19 @@ chrome.storage.onChanged.addListener((ch) => {
 });
 
 function showTab(which) {
-  const hist = which === "history";
-  $("viewBuild").hidden = hist;
-  $("viewHistory").hidden = !hist;
-  $("tabBuild").setAttribute("aria-selected", String(!hist));
-  $("tabHistory").setAttribute("aria-selected", String(hist));
-  if (location.hash !== (hist ? "#history" : "")) history.replaceState(null, "", hist ? "#history" : location.pathname);
+  view = ["pets", "skills", "history"].includes(which) ? which : "pets";
+  for (const [v, tab, pane] of [["pets", "tabPets", "viewPets"], ["skills", "tabSkills", "viewSkills"], ["history", "tabHistory", "viewHistory"]]) {
+    $(tab).setAttribute("aria-selected", String(view === v));
+    $(pane).hidden = view !== v;
+  }
+  const hash = view === "pets" ? "" : `#${view}`;
+  if (location.hash !== hash) history.replaceState(null, "", hash || location.pathname);
   renderHistory();
 }
-$("tabBuild").addEventListener("click", () => showTab("build"));
+$("tabPets").addEventListener("click", () => showTab("pets"));
+$("tabSkills").addEventListener("click", () => showTab("skills"));
 $("tabHistory").addEventListener("click", () => showTab("history"));
-window.addEventListener("hashchange", () => showTab(location.hash === "#history" ? "history" : "build"));
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 // ---------------------------------------------------------------- import / export
 $("export").addEventListener("click", () => {
@@ -527,6 +672,6 @@ $("importFile").addEventListener("change", async () => {
 
 $("q").addEventListener("input", renderLibrary);
 $("newSkill").addEventListener("click", () => openEditor(null));
-$("logo").innerHTML = petSvg({ species: "cat" }, 34, true);
+$("logo").innerHTML = petSvg({ species: "cat" }, 30, true);
 load();
-loadHistory().then(() => showTab(location.hash === "#history" ? "history" : "build"));
+loadHistory().then(() => showTab(location.hash.slice(1)));

@@ -253,6 +253,15 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 .hout .reveal{margin-top:8px}
 
 
+
+/* resize handles on a selection */
+.pickframe{position:fixed;pointer-events:none!important}
+.pickframe .hd{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;background:#fff;border:2px solid #3A6FD8;border-radius:3px;pointer-events:auto;box-shadow:0 1px 3px rgba(27,26,31,.25)}
+.pickframe .hd:hover,.pickframe.dragging .hd{background:#3A6FD8}
+.hd-nw{left:0;top:0;cursor:nwse-resize}.hd-n{left:50%;top:0;cursor:ns-resize}.hd-ne{left:100%;top:0;cursor:nesw-resize}
+.hd-e{left:100%;top:50%;cursor:ew-resize}.hd-se{left:100%;top:100%;cursor:nwse-resize}.hd-s{left:50%;top:100%;cursor:ns-resize}
+.hd-sw{left:0;top:100%;cursor:nesw-resize}.hd-w{left:0;top:50%;cursor:ew-resize}
+
 /* pins: pets left where they worked */
 .pins{position:fixed;left:0;top:0;width:0;height:0}
 .pin{position:fixed;width:34px;height:34px;padding:0;border-radius:50%;line-height:0;filter:drop-shadow(0 4px 8px rgba(27,26,31,.28));transition:transform .12s ease;animation:pinpop .25s ease-out}
@@ -1052,11 +1061,12 @@ function startSelect(startEvent = null) {
       const { ctx, target } = mergePicks(parts);
       setAnchor(ctx, anchors);
       picked = { rect: unionRect(anchors.map(anchorRect)), anchors, ctx, target, svg, chip };
+      mountHandles();
       const n = Math.min(lib.pets.length, 9);
       chip.replaceChildren(
         el("span", { text: `Selected: ${ctx.label}.` }),
         el("span", { class: "kb" }, [el("kbd", { text: n > 1 ? `1–${n}` : "1" }), " pick a pet"]),
-        el("span", { class: "kb" }, ["or drag one here"]),
+        el("span", { class: "kb" }, ["or drag one here · drag the handles to resize"]),
         el("button", { text: "Clear", onclick: () => clearPick() }),
       );
     } catch (e) {
@@ -1101,7 +1111,82 @@ function repositionPick() {
       box.setAttribute("height", r.height + 6);
     });
     picked.rect = unionRect(rects);
+    placeHandles();
   });
+}
+
+// ---- resize handles: drag a corner or edge to grow / shrink the selection
+const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+function mountHandles() {
+  if (!picked) return;
+  picked.frame?.remove();
+  const frame = el("div", { class: "pickframe" }, HANDLES.map((h) => el("span", { class: `hd hd-${h}`, "data-h": h, role: "button", "aria-label": `Resize selection (${h})`, tabindex: "-1" })));
+  picked.frame = frame;
+  layer.append(frame);
+  placeHandles();
+  frame.addEventListener("pointerdown", (e) => {
+    const h = e.target.dataset?.h;
+    if (!h || !picked) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.target.setPointerCapture(e.pointerId);
+    const start = picked.rect;
+    let r = start;
+    frame.classList.add("dragging");
+    const move = (ev) => {
+      let { left, top, right, bottom } = start;
+      if (h.includes("w")) left = Math.min(ev.clientX, right - 16);
+      if (h.includes("e")) right = Math.max(ev.clientX, left + 16);
+      if (h.includes("n")) top = Math.min(ev.clientY, bottom - 16);
+      if (h.includes("s")) bottom = Math.max(ev.clientY, top + 16);
+      r = new DOMRect(left, top, right - left, bottom - top);
+      drawRects([r]);
+    };
+    const up = async () => {
+      e.target.removeEventListener("pointermove", move);
+      e.target.removeEventListener("pointerup", up);
+      frame.classList.remove("dragging");
+      if (r === start) return;
+      await reselectBox(r);
+    };
+    e.target.addEventListener("pointermove", move);
+    e.target.addEventListener("pointerup", up);
+  });
+}
+function drawRects(rects) {
+  if (!picked) return;
+  const fresh = outlineSvg(rects);
+  picked.svg.replaceWith(fresh);
+  picked.svg = fresh;
+  picked.rect = unionRect(rects);
+  placeHandles();
+}
+function placeHandles() {
+  const f = picked?.frame;
+  if (!f) return;
+  const r = picked.rect;
+  Object.assign(f.style, { left: `${r.left - 3}px`, top: `${r.top - 3}px`, width: `${r.width + 6}px`, height: `${r.height + 6}px` });
+}
+/** After a resize the selection becomes that box: re-read exactly what's inside it. */
+async function reselectBox(rect) {
+  const chip = picked.chip;
+  chip.replaceChildren(spinner(), "Reading the new area…");
+  try {
+    const ctx = await regionCtx(boxPolygon(rect), rect);
+    const anchors = [docAnchor(rect)];
+    setAnchor(ctx, anchors);
+    Object.assign(picked, { anchors, ctx, target: null });
+    drawRects([rect]);
+    const n = Math.min(lib.pets.length, 9);
+    chip.replaceChildren(
+      el("span", { text: `Selected: ${ctx.label}.` }),
+      el("span", { class: "kb" }, [el("kbd", { text: n > 1 ? `1–${n}` : "1" }), " pick a pet"]),
+      el("span", { class: "kb" }, ["drag the handles to resize"]),
+      el("button", { text: "Clear", onclick: () => clearPick() }),
+    );
+  } catch (err) {
+    chip.textContent = err.message || String(err);
+  }
 }
 addEventListener("scroll", repositionPick, true); // capture: inner scrollers too
 addEventListener("resize", repositionPick);
@@ -1369,7 +1454,7 @@ async function openPinCard(pin, pinEl) {
   };
   ask.addEventListener("keydown", (e) => {
     e.stopPropagation();
-    if (e.key === "Enter" && ask.value.trim()) go({ instruction: followUp(pin, byId, ask.value.trim()), petId });
+    if (e.key === "Enter" && ask.value.trim()) go({ instruction: followUp(pin, byId, ask.value.trim()), label: `Follow-up: ${ask.value.trim()}`, petId });
     if (e.key === "Escape") clearUI();
   });
   ["keyup", "keypress"].forEach((t) => ask.addEventListener(t, (e) => e.stopPropagation()));
@@ -1434,6 +1519,7 @@ function endSelect() {
 function clearPick() {
   picked?.svg.remove();
   picked?.chip.remove();
+  picked?.frame?.remove();
   picked = null;
   setOpen("pick", false);
 }
@@ -1674,7 +1760,7 @@ function run(ctx, target, opts) {
   const skill = opts.skillId ? lib.skills.find((s) => s.id === opts.skillId) : null;
   const pet = opts.petId ? lib.pets.find((p) => p.id === opts.petId) : null;
   const action = skill?.action || "answer";
-  const label = skill ? skill.name : opts.instruction;
+  const label = skill ? skill.name : opts.label || opts.instruction;
   lastRun = { ...opts, label };
   if (opts.skillId) usage[opts.skillId] = (usage[opts.skillId] || 0) + 1;
   chrome.storage.local.set({ usage, lastRun: { skillId: opts.skillId, petId: opts.petId, instruction: opts.instruction, label } });
@@ -1819,7 +1905,7 @@ function run(ctx, target, opts) {
       approve.textContent = "Posted";
     }
   });
-  port.postMessage({ source: "page", context: ctx, skillId: opts.skillId, petId: opts.petId, instruction: opts.instruction, request: opts.request });
+  port.postMessage({ source: "page", context: ctx, skillId: opts.skillId, petId: opts.petId, instruction: opts.instruction, label, request: opts.request });
 }
 
 const spinner = () => el("span", { class: "spin", "aria-hidden": "true" });

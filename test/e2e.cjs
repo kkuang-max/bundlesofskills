@@ -181,6 +181,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await page.keyboard.press("Enter");
   await sleep(1800);
   assert.match(calls.at(-1).messages[1].content[0].text, /Earlier answers about this same content[\s\S]*Summary[\s\S]*make it shorter/);
+  assert.equal((await sw.evaluate(() => chrome.storage.local.get("history"))).history[0].skillName, "Follow-up: make it shorter");
   await page.keyboard.press("Escape");
   // reload: the pin comes back at the same spot
   await page.reload();
@@ -308,6 +309,18 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await sleep(500);
   assert.ok(/open/.test(await dockClass()), "a pick keeps the bar open");
   await shot(page, "9g-alt-drag-select");
+  // drag the bottom-right handle to shrink the box to roughly the first line → fewer words
+  const selBefore = await page.getByRole("status").filter({ hasText: "Selected" }).innerText();
+  const se = await page.locator(".pickframe .hd-se").boundingBox();
+  await page.mouse.move(se.x + 6, se.y + 6);
+  await page.mouse.down();
+  await page.mouse.move(pb.x + 260, pb.y + 16, { steps: 8 });
+  await page.mouse.up();
+  await sleep(500);
+  const after = await page.getByRole("status").filter({ hasText: "Selected" }).innerText();
+  const nw = (t) => Number(/(\d+) words/.exec(t)?.[1] || 0);
+  assert.ok(nw(after) > 0 && nw(after) < nw(selBefore), `resize re-reads the area (${nw(selBefore)} → ${nw(after)} words)`);
+  await shot(page, "9g2-resized-selection");
   await page.keyboard.press("Digit2");
   await sleep(300);
   assert.ok(await page.getByRole("dialog", { name: "Quill's skills" }).isVisible(), "2 sends the pick to pet 2");
@@ -423,7 +436,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await studio.screenshot({ path: SS + "14-studio.png" });
   // characters: default squad is dog / bird / cat / frog; switch Scout to a bunny
   assert.deepEqual((await sw.evaluate(() => chrome.storage.local.get("library"))).library.pets.map((p) => p.species), ["dog", "bird", "cat", "frog"]);
-  await studio.locator(".pet", { has: studio.locator('input[value="Scout"]') }).getByRole("button", { name: "Bunny" }).click();
+  await studio.locator(".looks").getByRole("button", { name: "Bunny" }).click(); // Scout is selected in the rail
   await sleep(300);
   assert.equal((await sw.evaluate(() => chrome.storage.local.get("library"))).library.pets[0].species, "bunny");
   await studio.screenshot({ path: SS + "14b-studio-characters.png" });
@@ -433,20 +446,42 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   assert.ok(await page.evaluate(() => document.querySelector("skill-pet-root").shadowRoot.querySelectorAll(".dock .pet-art").length === 4));
   await studio.bringToFront();
   console.log("✓ characters: species per pet, switchable in the Studio, live on pages");
-  // drag "Pull dates" onto Pixel
-  const src = studio.locator(".skillrow", { hasText: "Pull dates" });
-  const dst = studio.locator(".pet", { has: studio.locator('input[value="Pixel"]') });
-  await src.dragTo(dst, { targetPosition: { x: 120, y: 30 } });
+  // Pets view: open Pixel, "+ Add skills" drawer, pick two, add
+  await studio.locator("#rail").getByRole("button", { name: /^Pixel/ }).click();
+  await studio.getByRole("button", { name: "+ Add skills" }).click();
+  await studio.locator("#addSheet .srow", { hasText: "Pull dates" }).click();
+  await studio.locator("#addSheet .srow", { hasText: "Quiz me" }).click();
+  assert.equal(await studio.locator("#sheetAdd").innerText(), "Add 2 to Pixel");
+  await studio.screenshot({ path: SS + "14d-studio-add-sheet.png" });
+  await studio.locator("#sheetAdd").click();
   await sleep(300);
   let stored = await sw.evaluate(() => chrome.storage.local.get("library"));
-  assert.ok(stored.library.pets.find((p) => p.id === "pixel").skillIds.includes("dates"), "drag skill onto pet");
-  console.log("✓ Studio: drag a skill onto a pet");
+  const pixelSkills = stored.library.pets.find((p) => p.id === "pixel").skillIds;
+  assert.ok(pixelSkills.includes("dates") && pixelSkills.includes("quiz"), "added via the drawer");
+  // accordion row → details
+  await studio.locator(".acc-row", { hasText: "Pull dates" }).click();
+  assert.match(await studio.locator(".acc-body").innerText(), /Also known by\s+Scout/);
+  await studio.screenshot({ path: SS + "14e-studio-pets.png" });
+  // All skills: "Known by" toggles
+  await studio.getByRole("tab", { name: "All skills" }).click();
+  await studio.locator(".scard", { hasText: "Tighten" }).getByRole("button", { name: "Sprout knows Tighten" }).click();
+  await sleep(300);
+  stored = await sw.evaluate(() => chrome.storage.local.get("library"));
+  assert.ok(stored.library.pets.find((p) => p.id === "sprout").skillIds.includes("tighten"), "Known by toggle");
+  // drag a card onto a pet in the rail
+  await studio.getByRole("tab", { name: "Pets" }).click();
+  await studio.getByRole("tab", { name: "All skills" }).click();
+  await studio.screenshot({ path: SS + "14f-studio-all-skills.png" });
+  await studio.getByRole("button", { name: "Stickers", exact: true }).click();
+  await studio.screenshot({ path: SS + "14g-studio-stickers.png" });
+  await studio.getByRole("button", { name: "Cards", exact: true }).click();
+  console.log("✓ Studio: Pets view, Add skills drawer, accordion, All skills Known-by toggles, Stickers view");
   // new skill
   await studio.getByRole("button", { name: "+ New skill" }).click();
   await studio.fill("#fName", "Make it pirate");
   await studio.fill("#fPrompt", "Rewrite this in pirate speak. Output only the rewrite.");
   await studio.selectOption("#fAction", "replace");
-  await studio.check("#pet-quill");
+  await studio.check("#pet-quill"); // "Pets that know it" in the editor
   await studio.fill("#tText", "Hello team, the build is green.");
   await studio.click("#tRun");
   await sleep(400);

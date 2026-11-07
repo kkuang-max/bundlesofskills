@@ -4,193 +4,62 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Skill Studio</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&display=swap">
-<style>
-  :root{--bg:#F5F3EE;--card:#FFFFFF;--line:#E3DFD6;--line2:#EEEAE2;--ink:#1B1A1F;--muted:#5E5B66;--accent:#B8401A;--blue:#3A6FD8;--ok:#1E6B4F}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,system-ui,-apple-system,sans-serif}
-  h1,h2,h3,.display{font-family:'Bricolage Grotesque',Inter,sans-serif;font-weight:800;margin:0}
-  button{font:inherit;color:inherit;cursor:pointer}
-  button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-  .muted{color:var(--muted)}
-  header{max-width:1280px;margin:0 auto;padding:28px 24px 8px;display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
-  header .badge{flex:none;width:44px;height:44px;border-radius:12px;background:var(--ink);display:flex;align-items:center;justify-content:center}
-  header h1{font-size:28px;line-height:1.1}
-  header p{margin:4px 0 0;color:var(--muted);max-width:640px}
-  header .right{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
-  .btn{padding:9px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-weight:600;font-size:13px}
-  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
-  .btn.danger{color:#9B2C1A}
-  .btn.small{padding:6px 10px;font-size:12px}
-  main{max-width:1280px;margin:0 auto;padding:16px 24px 64px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:24px;align-items:start}
-  @media (max-width:900px){main{grid-template-columns:1fr}}
-  section.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
-  .ph{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;flex-wrap:wrap}
-  .ph h2{font-size:20px}
-  .ph .grow{flex:1}
-  .search{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff;margin-bottom:10px}
-  .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
-  .chip{padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:12px}
-  .chip[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
-  .group-h{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px}
-  .skills{display:flex;flex-direction:column;gap:6px}
-  .skillrow{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:grab;width:100%;text-align:left}
-  .skillrow:hover{border-color:#C9C3B7}
-  .skillrow.dragging{opacity:.5}
-  .skillrow .txt{flex:1;min-width:0}
-  .skillrow .nm{font-weight:600;font-size:13.5px}
-  .skillrow .meta{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .tag{font-size:10.5px;padding:2px 6px;border-radius:6px;background:#F2EFE9;color:var(--muted);white-space:nowrap}
-  .tag.act{background:#FFF0E6;color:#8A4B12}
-  .stk{flex:none;white-space:nowrap;letter-spacing:-.02em;display:inline-flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 6px rgba(27,26,31,.22);font-family:'Bricolage Grotesque',Inter,sans-serif;font-weight:800;color:var(--ink);line-height:1;text-align:center;overflow:hidden}
-
-  .squad{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
-  .pet{border:1px solid var(--line);border-radius:16px;padding:14px;background:#FBFAF7;display:flex;flex-direction:column;gap:10px;transition:box-shadow .1s,border-color .1s}
-  .pet.over{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,111,216,.18);background:#F3F6FD}
-  .pet .top{display:flex;align-items:center;gap:10px}
-  .pet .top input{border:0;background:transparent;font:800 18px 'Bricolage Grotesque',Inter,sans-serif;width:100%;min-width:0;padding:2px 4px;border-radius:6px;color:var(--ink)}
-  .pet .top input.role{font:500 12px Inter,sans-serif;color:var(--muted)}
-  .pet .top input:hover{background:#fff}
-  .pet .names{display:flex;flex-direction:column;flex:1;min-width:0}
-  .swatches{display:flex;gap:4px}
-  .species{display:flex;gap:2px;flex-wrap:wrap}
-  .species .sp{width:38px;height:38px;border:1px solid transparent;border-radius:10px;background:transparent;padding:3px;display:flex;align-items:center;justify-content:center;opacity:.55}
-  .species .sp:hover{opacity:1;background:#fff}
-  .species .sp[aria-pressed=true]{opacity:1;background:#fff;border-color:var(--ink)}
-  .pet .pet-face svg .e-happy{display:none}
-  .pet:hover .pet-face .e-open{display:none}
-  .pet:hover .pet-face .e-happy{display:inline!important}
-  .sw{width:18px;height:18px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px var(--line)}
-  .sw[aria-pressed=true]{box-shadow:0 0 0 2px var(--ink)}
-  .drop{display:flex;flex-direction:column;gap:5px;min-height:60px;padding:6px;border:1.5px dashed #D9D4C9;border-radius:12px;background:#fff}
-  .drop .empty{font-size:12px;color:var(--muted);padding:12px;text-align:center}
-  .member{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:9px;font-size:12.5px}
-  .member:hover{background:#F7F5F0}
-  .member .nm{flex:1;min-width:0}
-  .member button{border:0;background:none;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px;border-radius:6px}
-  .perms{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center}
-  .perms label{display:flex;gap:5px;align-items:center}
-  .apps{font-size:12px;color:var(--muted)}
-  .apps select{font:inherit;font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:#fff}
-  .pet .bottom{display:flex;justify-content:space-between;align-items:center}
-  .adopt{border:2px dashed #D9D4C9;border-radius:16px;background:transparent;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--muted);font-weight:600}
-
-  /* editor drawer */
-  dialog{border:0;border-radius:18px;padding:0;width:min(720px,calc(100vw - 32px));box-shadow:0 30px 60px rgba(27,26,31,.3);color:var(--ink)}
-  dialog::backdrop{background:rgba(27,26,31,.3)}
-  .ed{display:grid;grid-template-columns:minmax(0,1fr) 200px;gap:0}
-  @media (max-width:640px){.ed{grid-template-columns:1fr}}
-  .ed .form{padding:20px;display:flex;flex-direction:column;gap:12px;max-height:80vh;overflow:auto}
-  .ed .side{background:#FBFAF7;border-left:1px solid var(--line2);padding:20px;display:flex;flex-direction:column;align-items:center;gap:12px}
-  .field label,.field .lbl{display:block;font-weight:600;font-size:12.5px;margin-bottom:4px}
-  .field input[type=text],.field textarea,.field select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:9px;font:inherit;background:#fff}
-  .field textarea{min-height:110px;resize:vertical}
-  .field small{color:var(--muted);font-size:11.5px}
-  .row{display:flex;gap:10px;flex-wrap:wrap}
-  .row .field{flex:1;min-width:140px}
-  .checks{display:flex;gap:12px;flex-wrap:wrap;font-size:13px}
-  .checks label{display:flex;gap:5px;align-items:center;font-weight:400}
-  .shapes{display:flex;gap:6px}
-  .shapes button{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;display:flex;align-items:center;justify-content:center}
-  .shapes button[aria-pressed=true]{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
-  .ed .foot{grid-column:1/-1;display:flex;gap:8px;padding:14px 20px;border-top:1px solid var(--line2);flex-wrap:wrap}
-  .ed .foot .grow{flex:1}
-  .try{border-top:1px solid var(--line2);padding-top:12px}
-  .try .out{white-space:pre-wrap;background:#FBFAF7;border:1px solid var(--line2);border-radius:9px;padding:10px;min-height:44px;font-size:13px;margin-top:8px}
-  .try .out.err{color:#9B2C1A}
-  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:999px;font-size:13px;box-shadow:0 10px 24px rgba(27,26,31,.25)}
-  .sr{position:absolute;left:-9999px}
-  [hidden]{display:none!important}
-  .tabs{max-width:1280px;margin:8px auto 0;padding:0 24px;display:flex;gap:4px;border-bottom:1px solid var(--line)}
-  .tabs button{border:0;background:none;padding:10px 14px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
-  .tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink)}
-  .tabs .count{font-size:11px;background:#E9E5DC;border-radius:999px;padding:1px 7px;margin-left:4px;color:var(--muted)}
-  main.hist{display:block}
-  .hfilters{display:grid;grid-template-columns:auto 200px 1fr;gap:10px;align-items:start}
-  @media (max-width:800px){.hfilters{grid-template-columns:1fr}}
-  .hfilters select{padding:8px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff}
-  .hlist{display:flex;flex-direction:column;gap:10px;margin-top:6px}
-  .hitem{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fff;display:flex;flex-direction:column;gap:10px}
-  .hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-  .hmeta{flex:1;min-width:200px}
-  .hname{font-weight:600}
-  .hsub{font-size:12px;color:var(--muted)}
-  .hsub a{color:var(--muted)}
-  .hstat{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;background:#F2EFE9;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
-  .hstat.s-done{background:#EAF2FD;color:#234A99}
-  .hstat.s-approved,.hstat.s-posted{background:#E3F3EC;color:var(--ok)}
-  .hstat.s-error{background:#FCEDEA;color:#9B2C1A}
-  .hstat.s-running{background:#FFF0E6;color:#8A4B12}
-  .hcols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:12px}
-  @media (max-width:800px){.hcols{grid-template-columns:1fr}}
-  .hbox{background:#FBFAF7;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;font-size:13px;white-space:pre-wrap;max-height:220px;overflow:auto}
-  .hbox.err{color:#9B2C1A}
-  .hlbl{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px}
-  .hact{display:flex;gap:8px}
-  .hitem.big .hbox{max-height:none}
-  .hitem.big .hcols{grid-template-columns:minmax(0,1fr) minmax(0,2fr)}
-  .reveal{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px;white-space:normal}
-  .rv-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
-  .rv-head .link{border:0;background:none;color:var(--blue);text-decoration:underline;font-size:12px;padding:0}
-  .spoilers{display:flex;flex-direction:column;gap:6px}
-  .spoiler{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:9px;background:#F2EFE9;border:1px dashed #D9D4C9;white-space:normal;font:13px/1.45 Inter,system-ui,sans-serif;color:var(--ink);cursor:pointer;position:relative}
-  .spoiler .sp-txt{filter:blur(6px);user-select:none;transition:filter .2s}
-  .spoiler:not(.shown)::after{content:"Click to reveal";position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:600;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:999px;padding:2px 8px}
-  .spoiler.shown{background:#EAF6F0;border-style:solid;border-color:#BFE0D2;cursor:default}
-  .spoiler.shown .sp-txt{filter:none;user-select:text}
-  .try .out{max-height:50vh;overflow:auto}
-  .empty-h{color:var(--muted);text-align:center;padding:40px 10px}
-  .spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:rot .7s linear infinite;vertical-align:-2px}
-  @keyframes rot{to{transform:rotate(360deg)}}
-  .try .out.loading{color:var(--muted);display:flex;gap:8px;align-items:center}
-  .skel{display:flex;flex-direction:column;gap:7px;width:100%}
-  .skel i{display:block;height:9px;border-radius:5px;background:linear-gradient(90deg,#EFEBE3 0%,#F8F6F1 40%,#EFEBE3 80%);background-size:300% 100%;animation:shimmer 1.2s linear infinite}
-  .skel i:nth-child(2){width:80%}.skel i:nth-child(3){width:60%}
-  @keyframes shimmer{from{background-position:100% 0}to{background-position:-200% 0}}
-  @media (prefers-reduced-motion:reduce){.spin,.skel i{animation:none}}
-</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="studio.css">
 </head>
 <body>
-<header>
-  <div class="badge" id="logo"></div>
-  <div>
-    <h1>Skill Studio</h1>
-    <p>Write skills, give each one a sticker, and group them into pets. Drag a skill onto a pet to teach it. On any page, drag a pet onto your work and it offers only the skills that fit what's there.</p>
+<header class="top">
+  <div class="brand"><span id="logo" class="logo"></span><span class="brand-name">Skill Studio</span></div>
+  <div class="seg" role="tablist" aria-label="Studio">
+    <button role="tab" id="tabPets" aria-controls="viewPets" aria-selected="true" type="button">Pets</button>
+    <button role="tab" id="tabSkills" aria-controls="viewSkills" aria-selected="false" type="button">All skills</button>
+    <button role="tab" id="tabHistory" aria-controls="viewHistory" aria-selected="false" type="button">History <span class="count" id="histCount"></span></button>
   </div>
-  <div class="right">
-    <button class="btn" id="export" type="button">Export</button>
-    <label class="btn" for="importFile">Import</label><input class="sr" type="file" id="importFile" accept="application/json">
-    <a class="btn" href="options.html">Settings &amp; keys</a>
-  </div>
+  <nav class="toplinks" aria-label="Library">
+    <label class="toplink" for="importFile">Import</label><input class="sr" type="file" id="importFile" accept="application/json">
+    <button class="toplink" id="export" type="button">Export</button>
+    <a class="toplink" href="options.html">Settings</a>
+    <button class="btn primary" id="newSkill" type="button">+ New skill</button>
+  </nav>
 </header>
-<nav class="tabs" role="tablist" aria-label="Studio">
-  <button role="tab" id="tabBuild" aria-controls="viewBuild" aria-selected="true" type="button">Skills &amp; pets</button>
-  <button role="tab" id="tabHistory" aria-controls="viewHistory" aria-selected="false" type="button">History <span class="count" id="histCount"></span></button>
-</nav>
-<main id="viewBuild" role="tabpanel" aria-labelledby="tabBuild">
-  <section class="panel" aria-labelledby="libH">
-    <div class="ph"><h2 id="libH">Skills</h2><span class="muted grow" id="libCount"></span><button class="btn primary small" id="newSkill" type="button">+ New skill</button></div>
-    <label class="sr" for="q">Search skills</label>
-    <input class="search" id="q" type="search" placeholder="Search skills…">
-    <div class="filters" id="filters" role="group" aria-label="Filter by what a skill works on"></div>
-    <div id="lib"></div>
-  </section>
-  <section class="panel" aria-labelledby="sqH">
-    <div class="ph"><h2 id="sqH">Pet squad</h2><span class="muted grow">Each pet is a group of skills. Permissions live with the pet.</span></div>
-    <div class="squad" id="squad"></div>
-  </section>
+
+<main id="viewPets" class="pets-view" role="tabpanel" aria-labelledby="tabPets">
+  <nav class="rail" id="rail" aria-label="Your pets"></nav>
+  <section class="petcard" id="petCard" aria-live="polite"></section>
 </main>
-<main id="viewHistory" class="hist" role="tabpanel" aria-labelledby="tabHistory" hidden>
-  <section class="panel">
-    <div class="ph"><h2>History</h2><span class="muted grow">Everything the pets generated, on pages and in Try it. Newest first.</span><button class="btn small danger" id="hClear" type="button">Clear history</button></div>
-    <div class="hfilters">
-      <div class="filters" id="hSource" role="group" aria-label="Where it was generated"></div>
-      <label class="sr" for="hSite">Site</label><select id="hSite"></select>
-      <label class="sr" for="hq">Search history</label><input class="search" id="hq" type="search" placeholder="Search history…">
-    </div>
-    <div id="hList" class="hlist"></div>
-  </section>
+
+<main id="viewSkills" class="skills-view" role="tabpanel" aria-labelledby="tabSkills" hidden>
+  <div class="page-h"><h1>All skills <span class="count-lg" id="libCount"></span></h1></div>
+  <p class="sub">Every skill you can give a pet. Tap a pet under “Known by” to give or take a skill, or open a card to edit it.</p>
+  <div class="search-wrap"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><label class="sr" for="q">Search skills</label><input id="q" type="search" placeholder="Search skills"></div>
+  <div class="filterbar">
+    <div class="chips" id="filters" role="group" aria-label="Filter by what a skill works on"></div>
+    <div class="seg small" role="group" aria-label="Layout"><button type="button" id="layCards" aria-pressed="true">Cards</button><button type="button" id="layStickers" aria-pressed="false">Stickers</button></div>
+  </div>
+  <div id="lib"></div>
 </main>
+
+<main id="viewHistory" class="hist-view" role="tabpanel" aria-labelledby="tabHistory" hidden>
+  <div class="page-h"><h1>History</h1><button class="link danger" id="hClear" type="button">Clear history</button></div>
+  <p class="sub">Everything the pets generated, on pages and in Try it. Newest first.</p>
+  <div class="hfilters">
+    <div class="chips" id="hSource" role="group" aria-label="Where it was generated"></div>
+    <label class="sr" for="hSite">Site</label><select id="hSite"></select>
+    <div class="search-wrap"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><label class="sr" for="hq">Search history</label><input id="hq" type="search" placeholder="Search history"></div>
+  </div>
+  <div id="hList" class="hlist"></div>
+</main>
+
+<div class="sheet-scrim" id="sheetScrim" hidden></div>
+<aside class="sheet" id="addSheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <div class="sheet-h"><h2 id="sheetTitle">Add skills</h2><button class="iconbtn" id="sheetClose" type="button" aria-label="Close">×</button></div>
+  <div class="sheet-tools">
+    <div class="search-wrap filled"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><label class="sr" for="sq">Search skills</label><input id="sq" type="search" placeholder="Search skills"></div>
+    <div class="chips" id="sFilters" role="group" aria-label="Filter"></div>
+  </div>
+  <div class="sheet-list" id="sheetList" role="group" aria-label="Skills to add"></div>
+  <div class="sheet-f"><span id="sheetCount" class="muted">0 selected</span><span class="grow"></span><button class="link" id="sheetCancel" type="button">Cancel</button><button class="btn primary" id="sheetAdd" type="button" disabled>Add</button></div>
+</aside>
 
 <dialog id="editor" aria-labelledby="edTitle">
   <form method="dialog" class="ed" id="edForm">
