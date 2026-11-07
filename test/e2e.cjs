@@ -143,6 +143,54 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   assert.equal(await md.locator('li.task input[type="checkbox"]').count(), 1);
   assert.ok(!(await md.innerText()).includes("**"), "no raw markdown");
   console.log("✓ answers render as Markdown (headings, bold, lists, table, checklist)");
+
+  // ---- pins: the pet stays where it worked
+  await page.keyboard.press("Escape"); // close the result panel
+  await sleep(200);
+  // earlier runs left pins on the text field and the image; the newest is the paragraph's
+  assert.equal(await page.locator(".pin").count(), 3, "every run that had a spot left a pin");
+  const pinId = await page.locator(".pin").last().getAttribute("data-pin");
+  const pinBtn = page.locator(`.pin[data-pin="${pinId}"]`);
+  assert.ok(await pinBtn.isVisible(), "a pet is left on the page after generating");
+  const pb0 = await pinBtn.boundingBox();
+  const para = await page.locator("#p").boundingBox();
+  assert.ok(pb0.y < para.y + 20 && pb0.y > para.y - 40, "pinned at the selection");
+  await page.evaluate(() => scrollTo(0, 120));
+  await sleep(250);
+  const pb1 = await pinBtn.boundingBox();
+  assert.ok(Math.abs(pb0.y - 120 - pb1.y) < 3, `pin scrolls with the page (${pb0.y} → ${pb1.y})`);
+  await page.evaluate(() => scrollTo(0, 0));
+  await sleep(200);
+  await shot(page, "8e-pin-left");
+  await pinBtn.click();
+  await sleep(300);
+  const pincard = page.getByRole("dialog", { name: "Answers left here" });
+  assert.equal(await pincard.locator(".pin-out h2").first().innerText(), "Summary");
+  await shot(page, "8f-pin-card");
+  // run another skill on the same spot from the pin
+  await pincard.getByRole("button", { name: "Pull dates" }).click();
+  await sleep(1800);
+  await page.keyboard.press("Escape");
+  await sleep(200);
+  assert.equal(await page.locator(".pin").count(), 3, "same spot → same pin");
+  assert.equal(await pinBtn.locator(".pin-count").innerText(), "2");
+  // follow-up carries the earlier answers
+  await pinBtn.click();
+  await sleep(300);
+  await page.getByRole("textbox", { name: "Ask a follow-up about this spot" }).fill("make it shorter");
+  await page.keyboard.press("Enter");
+  await sleep(1800);
+  assert.match(calls.at(-1).messages[1].content[0].text, /Earlier answers about this same content[\s\S]*Summary[\s\S]*make it shorter/);
+  await page.keyboard.press("Escape");
+  // reload: the pin comes back at the same spot
+  await page.reload();
+  await sleep(900);
+  assert.equal(await page.locator(".pin").count(), 3, "pins survive a reload");
+  assert.equal(await pinBtn.locator(".pin-count").innerText(), "3");
+  const pb2 = await pinBtn.boundingBox();
+  assert.ok(Math.abs(pb2.y - pb0.y) < 3 && Math.abs(pb2.x - pb0.x) < 3, "restored at the same spot");
+  await shot(page, "8g-pin-after-reload");
+  console.log("✓ pins: pet left where it worked, scrolls with the page, reopens answers, more skills + follow-ups, survives reload");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   console.log("✓ select tool box → click Scout → summarize");
@@ -354,11 +402,17 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await fig.getByRole("button", { name: "Approve & post comment" }).click();
   await sleep(500);
   assert.equal(figmaComment.token, "figd_test");
-  assert.deepEqual(figmaComment.body.client_meta, { node_id: "12:34", node_offset: { x: 0, y: 0 } });
+  assert.deepEqual(figmaComment.body.client_meta, { node_id: "12:34", node_offset: { x: 24, y: 24 } });
   assert.match(figmaComment.body.message, /Pay \$42/);
   const figCall = calls.at(-1);
   assert.match(figCall.messages[1].content[0].text, /Continue/, "frame text layers from the Figma API");
   await fig.screenshot({ path: SS + "13-figma-posted.png" });
+  await fig.keyboard.press("Escape");
+  await sleep(200);
+  const fpin = await fig.locator(".pin").first().boundingBox();
+  assert.ok(Math.abs(fpin.x + 17 - 430) < 4 && Math.abs(fpin.y + 17 - 300) < 4, "Figma pin sits where the pet was dropped, in the frame");
+  assert.equal(await fig.locator(".pin .pin-flag").innerText(), "Posted");
+  await fig.screenshot({ path: SS + "13b-figma-pin.png" });
   console.log("✓ Figma frame → approve → comment posted to node 12:34");
 
   // ---- 6) Skill Studio
@@ -377,6 +431,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await page.bringToFront();
   await shot(page, "14c-dock-with-bunny");
   assert.ok(await page.evaluate(() => document.querySelector("skill-pet-root").shadowRoot.querySelectorAll(".dock .pet-art").length === 4));
+  await studio.bringToFront();
   console.log("✓ characters: species per pet, switchable in the Studio, live on pages");
   // drag "Pull dates" onto Pixel
   const src = studio.locator(".skillrow", { hasText: "Pull dates" });
@@ -396,7 +451,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await studio.click("#tRun");
   await sleep(400);
   await studio.screenshot({ path: SS + "15a-studio-try-loading.png" });
-  assert.match(await studio.locator("#tOut").innerText(), /Generating/);
+  assert.match(await studio.locator("#tOut").evaluate((n) => n.textContent), /Generating/);
   await sleep(1400);
   await studio.screenshot({ path: SS + "15-studio-editor.png" });
   await studio.click("#edSave");

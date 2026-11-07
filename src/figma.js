@@ -65,7 +65,8 @@ export async function figmaFrame(token, fileKey, nodeId) {
 /** Post a comment pinned to a node (or to the file if no node is selected). */
 export async function figmaComment(token, fileKey, nodeId, message) {
   const body = { message };
-  if (nodeId) body.client_meta = { node_id: nodeId, node_offset: { x: 0, y: 0 } };
+  // Pin the comment inside the frame (a little in from its top-left corner), not on its edge.
+  if (nodeId) body.client_meta = { node_id: nodeId, node_offset: { x: 24, y: 24 } };
   const r = await call(token, `/files/${fileKey}/comments`, { method: "POST", body: JSON.stringify(body) });
   return { id: r.id };
 }

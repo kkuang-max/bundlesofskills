@@ -37,20 +37,23 @@ const BLOCKS = "p,li,h1,h2,h3,h4,h5,h6,blockquote,pre,td,th,dd,dt,figcaption,sum
 // ---------------------------------------------------------------- state
 let lib = normalizeLibrary(null);
 let usage = {};
-let prefs = { peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets" };
+let prefs = { peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", pinsEnabled: true };
 let lastRun = null;
 let picked = null; // what the select tool picked: {rect, ctx, target, svg, chip}
 
-chrome.storage.local.get({ library: null, usage: {}, peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", lastRun: null }).then((s) => {
+chrome.storage.local.get({ library: null, usage: {}, peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", pinsEnabled: true, lastRun: null }).then((s) => {
   lib = normalizeLibrary(s.library);
   usage = s.usage;
   lastRun = s.lastRun;
-  prefs = { peekEnabled: s.peekEnabled, peekBlocked: s.peekBlocked, squadVisible: s.squadVisible, squadCollapsed: s.squadCollapsed, squadMiniStyle: s.squadMiniStyle };
+  prefs = { peekEnabled: s.peekEnabled, peekBlocked: s.peekBlocked, squadVisible: s.squadVisible, squadCollapsed: s.squadCollapsed, squadMiniStyle: s.squadMiniStyle, pinsEnabled: s.pinsEnabled };
   renderDock();
+  loadPins();
 });
 chrome.storage.onChanged.addListener((ch) => {
   if (ch.library) lib = normalizeLibrary(ch.library.newValue); // Studio edits apply live
-  for (const k of ["peekEnabled", "peekBlocked", "squadVisible", "squadCollapsed", "squadMiniStyle"]) if (ch[k]) prefs[k] = ch[k].newValue;
+  for (const k of ["peekEnabled", "peekBlocked", "squadVisible", "squadCollapsed", "squadMiniStyle", "pinsEnabled"]) if (ch[k]) prefs[k] = ch[k].newValue;
+  if (ch.pinsEnabled) renderPins();
+  if (ch.library) renderPins();
   if (ch.library || ch.squadVisible || ch.squadCollapsed || ch.squadMiniStyle) renderDock();
 });
 
@@ -96,8 +99,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .tool .nm{font-size:11px;font-weight:600}
 .help{align-self:center;width:24px;height:24px;border-radius:50%;border:1px solid #E3DFD6;color:#5E5B66;font-weight:700;font-size:12px}
 .sep{width:1px;align-self:stretch;background:#E3DFD6;margin:4px 0}
-.pin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;align-self:center}
-.pin:hover{background:#F2EFE9}
+.minbtn{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;align-self:center}
+.minbtn:hover{background:#F2EFE9}
 
 /* minimized: small pets, or dots. Opens on hover / focus / text selection / select tool / pick / drag. */
 .dock.mini:not(.open){gap:8px;padding:6px 8px 6px 12px;border-radius:999px}
@@ -106,7 +109,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .dock.mini:not(.open) .pet .face svg{width:30px;height:30px}
 .dock.mini:not(.open) .pet .nm,.dock.mini:not(.open) .pet .rl{max-height:0;max-width:0;opacity:0}
 .dock.mini:not(.open) .extras{max-width:0;max-height:0;opacity:0}
-.dock.mini:not(.open) .pin{width:20px;height:20px}
+.dock.mini:not(.open) .minbtn{width:20px;height:20px}
 .dock.mini.dots:not(.open){gap:7px;padding:7px 8px 7px 12px}
 .dock.mini.dots:not(.open) .pet .face svg{width:0;height:0}
 .dock.mini.dots:not(.open) .pet .dot{width:13px;height:13px;border-width:1.5px}
@@ -249,6 +252,36 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 .spoiler.shown .sp-txt{filter:none;user-select:text}
 .hout .reveal{margin-top:8px}
 
+
+/* pins: pets left where they worked */
+.pins{position:fixed;left:0;top:0;width:0;height:0}
+.pin{position:fixed;width:34px;height:34px;padding:0;border-radius:50%;line-height:0;filter:drop-shadow(0 4px 8px rgba(27,26,31,.28));transition:transform .12s ease;animation:pinpop .25s ease-out}
+.pin:hover,.pin:focus-visible{transform:scale(1.15) rotate(-6deg)}
+.pin svg{width:34px;height:34px}
+.pin-count{position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;border-radius:999px;background:#1B1A1F;color:#fff;font:700 10px/16px Inter,system-ui,sans-serif;text-align:center;padding:0 4px}
+.pin-flag{position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);background:#1E6B4F;color:#fff;font:700 8.5px/1 Inter,system-ui,sans-serif;padding:2px 4px;border-radius:4px;white-space:nowrap}
+@keyframes pinpop{from{transform:scale(.3);opacity:0}}
+svg.pinline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible;pointer-events:none}
+.pincard{width:340px;max-height:min(560px,calc(100vh - 24px));overflow:auto}
+.pincard.big{width:min(760px,calc(100vw - 32px))}
+.pincard .top{align-items:center}
+.pincard .top .x{font-size:18px;line-height:1;padding:2px 6px;border-radius:8px;color:#5E5B66}
+.pin-runs{display:flex;flex-direction:column;gap:6px}
+.pin-run{border:1px solid #EEEAE2;border-radius:10px;padding:2px 8px 6px}
+.pin-run summary{display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 0;font-size:12.5px;font-weight:600;list-style:none}
+.pin-run summary::-webkit-details-marker{display:none}
+.pin-run summary .grow{flex:1;min-width:0}
+.pin-out{font-size:12.5px;max-height:220px;overflow:auto;padding:2px 2px 4px}
+.pincard.big .pin-out{max-height:none}
+.pin-more{display:flex;flex-direction:column;gap:6px;border-top:1px solid #EEEAE2;padding-top:8px}
+.pin-more .lbl{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#5E5B66}
+.pin-pets{display:flex;gap:2px}
+.pp{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;opacity:.5;border:1px solid transparent}
+.pp[aria-pressed=true]{opacity:1;border-color:#1B1A1F;background:#FBFAF7}
+.pin-skills{display:flex;flex-wrap:wrap;gap:5px}
+.chip-skill{display:inline-flex;align-items:center;gap:5px;padding:4px 9px 4px 4px;border:1px solid #E3DFD6;border-radius:999px;font-size:12px;background:#fff}
+.chip-skill:hover{border-color:#C9C3B7;background:#FBFAF7}
+
 /* history */
 .history{position:fixed;right:16px;top:16px;bottom:100px;width:min(380px,calc(100vw - 32px));background:#fff;border:1px solid #E3DFD6;border-radius:16px;box-shadow:0 18px 40px rgba(27,26,31,.22);display:flex;flex-direction:column;overflow:hidden;animation:pop .14s ease-out}
 .hh{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #EEEAE2}
@@ -327,7 +360,7 @@ const ICON = {
 
 // Transient UI (menus, panels, highlight). The dock and the current pick persist.
 function clearUI({ keepPick = true } = {}) {
-  layer.querySelectorAll(".card,.result,.bar,.scrim,.peek,.hl,.ghost,.history,.tip").forEach((n) => n.remove());
+  layer.querySelectorAll(".card,.result,.bar,.scrim,.peek,.hl,.ghost,.history,.tip,svg.pinline").forEach((n) => n.remove());
   setOpen("card", false);
   clearInterval(tickTimer);
   historyRender = null;
@@ -357,14 +390,14 @@ const editableRoot = (n) => n?.closest?.("[contenteditable=''],[contenteditable=
 function readSelection() {
   const a = deepActiveElement();
   if (isField(a) && a.selectionEnd > a.selectionStart) {
-    return { text: a.value.slice(a.selectionStart, a.selectionEnd), editable: true, rect: a.getBoundingClientRect(), target: { kind: "field", el: a, start: a.selectionStart, end: a.selectionEnd } };
+    return { text: a.value.slice(a.selectionStart, a.selectionEnd), editable: true, rect: a.getBoundingClientRect(), place: { node: a }, target: { kind: "field", el: a, start: a.selectionStart, end: a.selectionEnd } };
   }
   const sel = window.getSelection();
   if (sel && sel.rangeCount && !sel.isCollapsed && sel.toString().trim()) {
     const range = sel.getRangeAt(0);
     const node = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
     const editable = Boolean(editableRoot(node));
-    return { text: sel.toString(), editable, rect: range.getBoundingClientRect(), target: editable ? { kind: "rich", range: range.cloneRange() } : null };
+    return { text: sel.toString(), editable, rect: range.getBoundingClientRect(), place: { range: range.cloneRange() }, target: editable ? { kind: "rich", range: range.cloneRange() } : null };
   }
   return null;
 }
@@ -465,6 +498,7 @@ function selectionCtx(sel) {
   ctx.text = sel.text.trim().slice(0, 50000);
   ctx.kinds = sel.editable ? ["text", "editable"] : ["text"];
   ctx.label = describeContext(ctx);
+  if (sel.place) setAnchor(ctx, [sel.place]);
   return { ctx, target: sel.target };
 }
 function textCtx(text) {
@@ -602,7 +636,7 @@ function renderDock() {
       el("button", { class: "help", "aria-label": "Keyboard shortcuts", title: `Shortcuts (${ALT}/)`, text: "?", onclick: () => openShortcuts() }),
     ]),
     el("button", {
-      class: "pin muted",
+      class: "minbtn muted",
       "aria-label": mini ? "Keep the squad expanded" : "Minimize the squad",
       title: mini ? "Keep expanded" : "Minimize",
       html: mini ? ICON.plus : ICON.min,
@@ -758,6 +792,12 @@ async function dropPet(pet, t, x, y) {
   place(card, x + 16, y - 20);
   try {
     const { ctx, target } = await t.build();
+    if (!ctx.anchorId) {
+      // Pin to the thing it was dropped on, at the exact spot (as a fraction, so it survives resizes).
+      const r = t.rect;
+      const point = r.width && r.height ? { fx: Math.min(1, Math.max(0, (x - r.left) / r.width)), fy: Math.min(1, Math.max(0, (y - r.top) / r.height)) } : null;
+      setAnchor(ctx, [t.anchor ? { node: t.anchor } : docAnchor(r)], point);
+    }
     card.remove();
     mountCard(pet, ctx, target, x + 16, y - 20);
   } catch (e) {
@@ -1010,6 +1050,7 @@ function startSelect(startEvent = null) {
         picks.map((p, i) => (p.kind === "box" ? regionCtx(boxPolygon(rects[i]), rects[i]).then((ctx) => ({ ctx, target: null })) : p.t.build())),
       );
       const { ctx, target } = mergePicks(parts);
+      setAnchor(ctx, anchors);
       picked = { rect: unionRect(anchors.map(anchorRect)), anchors, ctx, target, svg, chip };
       const n = Math.min(lib.pets.length, 9);
       chip.replaceChildren(
@@ -1034,7 +1075,9 @@ function startSelect(startEvent = null) {
 // it when you scroll, resize, or the layout shifts.
 const docAnchor = (r) => ({ doc: new DOMRect(r.left + scrollX, r.top + scrollY, r.width, r.height) });
 function anchorRect(a) {
+  if (a.path && !a.node?.isConnected) a.node = safeQuery(a.path); // SPA re-render: find it again
   if (a.node?.isConnected) return a.node.getBoundingClientRect();
+  if (a.range?.startContainer?.isConnected) return a.range.getBoundingClientRect();
   if (a.doc) return new DOMRect(a.doc.x - scrollX, a.doc.y - scrollY, a.doc.width, a.doc.height);
   return new DOMRect(-9999, -9999, 0, 0);
 }
@@ -1063,6 +1106,308 @@ function repositionPick() {
 addEventListener("scroll", repositionPick, true); // capture: inner scrollers too
 addEventListener("resize", repositionPick);
 new ResizeObserver(repositionPick).observe(document.documentElement);
+
+
+// ---------------------------------------------------------------- pins: pets stay where they worked
+// After a pet generates something, it stays on the page at that exact spot as a
+// small pin. Pins are anchored to the element / text / box they worked on, so
+// they scroll and reflow with the page, and they're saved per page so they come
+// back next visit. Click one to reread the answers, reveal quiz answers, or run
+// another skill / ask a follow-up on the same spot.
+const anchors = new Map(); // anchorId → {parts:[{node}|{range}|{doc}|{path}], point}
+let pins = []; // see makePin()
+const PAGE_KEY = location.origin + location.pathname + location.search;
+const rid = (p) => `${p}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+function setAnchor(ctx, parts, point = null) {
+  const id = rid("a");
+  anchors.set(id, { parts, point });
+  ctx.anchorId = id;
+  return id;
+}
+
+/** A CSS path that finds this element again after a reload (or an SPA re-render). */
+function cssPath(n) {
+  if (!(n instanceof Element)) n = n?.parentElement;
+  const parts = [];
+  while (n && n !== document.body && n !== document.documentElement && parts.length < 12) {
+    if (n.id && !/\d{3,}/.test(n.id)) {
+      parts.unshift(`#${CSS_ESCAPE(n.id)}`);
+      break;
+    }
+    let i = 1;
+    for (let sib = n.previousElementSibling; sib; sib = sib.previousElementSibling) if (sib.tagName === n.tagName) i++;
+    parts.unshift(`${n.tagName.toLowerCase()}:nth-of-type(${i})`);
+    n = n.parentElement;
+  }
+  return parts.length ? (parts[0].startsWith("#") ? "" : "body > ") + parts.join(" > ") : "";
+}
+const CSS_ESCAPE = (v) => (globalThis.CSS?.escape ? globalThis.CSS.escape(v) : v.replace(/[^\w-]/g, "\\$&"));
+function safeQuery(path) {
+  try {
+    return path ? document.querySelector(path) : null;
+  } catch {
+    return null;
+  }
+}
+/** Saveable form of an anchor part. */
+function serializePart(a) {
+  const r = anchorRect(a);
+  const doc = { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height };
+  const el = a.node || (a.range ? a.range.commonAncestorContainer : null);
+  return { path: el ? cssPath(el) : "", doc };
+}
+function restorePart(p) {
+  const node = safeQuery(p.path);
+  return node ? { node, path: p.path } : { doc: new DOMRect(p.doc.x, p.doc.y, p.doc.width, p.doc.height), path: p.path };
+}
+
+function pinPoint(pin) {
+  const a = anchors.get(pin.anchorId);
+  if (!a) return null;
+  const rects = a.parts.map(anchorRect).filter((r) => r.width || r.height);
+  if (!rects.length) return null;
+  const r = unionRect(rects);
+  // Dropped at a spot → exactly there; otherwise the top-right corner of the thing.
+  const x = a.point ? r.left + a.point.fx * r.width : r.right - 4;
+  const y = a.point ? r.top + a.point.fy * r.height : r.top;
+  return { x, y, rect: r };
+}
+
+const pinsLayer = el("div", { class: "pins" });
+layer.prepend(pinsLayer);
+
+function renderPins() {
+  pinsLayer.replaceChildren(
+    ...(prefs.pinsEnabled === false ? [] : pins).map((pin) => {
+      const pet = lib.pets.find((p) => p.id === pin.petId) || { name: "Pet", species: pin.species, color: pin.color };
+      const n = pin.runs.length;
+      const b = el("button", {
+        class: "pin",
+        "data-pin": pin.id,
+        "aria-label": `${pet.name} left ${n} answer${n === 1 ? "" : "s"} here: ${pin.runs[0]?.skillName || ""}. Open.`,
+        title: `${pet.name}: ${pin.runs.map((r) => r.skillName).join(", ")}`,
+        html: petSvg({ species: pet.species || pin.species, color: pet.color || pin.color }, 34, true),
+      });
+      if (n > 1) b.append(el("span", { class: "pin-count", text: String(n), "aria-hidden": "true" }));
+      if (pin.runs.some((r) => r.status === "posted")) b.append(el("span", { class: "pin-flag", text: "Posted", "aria-hidden": "true" }));
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openPinCard(pin, b);
+      });
+      b.addEventListener("pointerenter", () => showPinOutline(pin));
+      b.addEventListener("pointerleave", () => !layer.querySelector(`.pincard[data-pin="${pin.id}"]`) && hidePinOutline());
+      return b;
+    }),
+  );
+  positionPins();
+}
+function positionPins() {
+  for (const b of pinsLayer.children) {
+    const pin = pins.find((p) => p.id === b.dataset.pin);
+    const pt = pin && pinPoint(pin);
+    const visible = pt && pt.y > -20 && pt.y < innerHeight + 20 && pt.x > -20 && pt.x < innerWidth + 20;
+    b.hidden = !visible;
+    if (visible) {
+      b.style.left = `${pt.x - 17}px`;
+      b.style.top = `${pt.y - 17}px`;
+    }
+  }
+  // An open pin card and its outline follow their pin.
+  const card = layer.querySelector(".pincard");
+  if (card) {
+    const pin = pins.find((p) => p.id === card.dataset.pin);
+    const pt = pin && pinPoint(pin);
+    if (pt) placeBesidePin(card, pt);
+    if (pin) showPinOutline(pin);
+  }
+}
+addEventListener("scroll", () => requestAnimationFrame(positionPins), true);
+addEventListener("resize", () => requestAnimationFrame(positionPins));
+new ResizeObserver(() => requestAnimationFrame(positionPins)).observe(document.documentElement);
+
+/** Right of the pin, or left of it when there's no room, so the pin stays visible. */
+function placeBesidePin(card, pt) {
+  const w = card.offsetWidth;
+  place(card, pt.x + 26 + w < innerWidth - 8 ? pt.x + 26 : pt.x - 26 - w, pt.y - 14);
+}
+function showPinOutline(pin) {
+  const a = anchors.get(pin.anchorId);
+  if (!a) return;
+  hidePinOutline();
+  const svg = outlineSvg(a.parts.map(anchorRect).filter((r) => r.width || r.height));
+  svg.classList.add("pinline");
+  layer.prepend(svg);
+}
+function hidePinOutline() {
+  layer.querySelectorAll("svg.pinline").forEach((n) => n.remove());
+}
+
+async function savePins() {
+  const { pins: all = {} } = await chrome.storage.local.get("pins");
+  const mine = pins.map((p) => ({ ...p, parts: anchors.get(p.anchorId)?.parts.map(serializePart) || p.parts, point: anchors.get(p.anchorId)?.point || null }));
+  if (mine.length) all[PAGE_KEY] = mine;
+  else delete all[PAGE_KEY];
+  // Keep storage bounded: the 60 most recently used pages.
+  const keys = Object.keys(all).sort((a, b) => Math.max(...all[b].map((p) => p.at)) - Math.max(...all[a].map((p) => p.at)));
+  for (const k of keys.slice(60)) delete all[k];
+  await chrome.storage.local.set({ pins: all });
+}
+async function loadPins() {
+  const { pins: all = {} } = await chrome.storage.local.get("pins");
+  pins = (all[PAGE_KEY] || []).map((p) => {
+    const anchorId = rid("a");
+    anchors.set(anchorId, { parts: p.parts.map(restorePart), point: p.point });
+    return { ...p, anchorId };
+  });
+  renderPins();
+}
+
+/** Called when a run finishes: add it to the pin on that spot (or leave a new pin). */
+function pinRun(ctx, pet, skill, label, historyId) {
+  if (!ctx.anchorId || !anchors.has(ctx.anchorId)) return;
+  let pin = pins.find((p) => p.anchorId === ctx.anchorId);
+  const { images, ...plainCtx } = ctx; // screenshots aren't stored; they're retaken when needed
+  if (!pin) {
+    pin = { id: rid("pin"), anchorId: ctx.anchorId, petId: pet?.id || null, species: pet?.species, color: pet?.color, ctx: plainCtx, runs: [], at: Date.now() };
+    pins.push(pin);
+  }
+  pin.live = ctx; // this session: keep the full context (with screenshots) for follow-ups
+  if (pet) Object.assign(pin, { petId: pet.id, species: pet.species, color: pet.color });
+  pin.runs.unshift({ historyId, skillName: label, skillId: skill?.id || null, status: "done", at: Date.now() });
+  pin.at = Date.now();
+  renderPins();
+  savePins();
+}
+function markPinRun(historyId, status) {
+  const pin = pins.find((p) => p.runs.some((r) => r.historyId === historyId));
+  if (!pin) return;
+  pin.runs.find((r) => r.historyId === historyId).status = status;
+  renderPins();
+  savePins();
+}
+function removePin(pin) {
+  pins = pins.filter((p) => p !== pin);
+  hidePinOutline();
+  renderPins();
+  savePins();
+}
+
+/** Rebuild what's needed to run another skill on a pin's spot. */
+async function pinContext(pin) {
+  const a = anchors.get(pin.anchorId);
+  const ctx = { ...(pin.live || pin.ctx), anchorId: pin.anchorId };
+  let target = null;
+  const node = a?.parts.length === 1 ? a.parts[0].node : null;
+  if (node && ctx.kinds.includes("editable")) {
+    if (isField(node)) target = fieldCtx(node).target;
+    else if (editableRoot(node)) {
+      const fresh = richCtx(node);
+      target = fresh.target;
+      ctx.text = fresh.ctx.text; // the text may have changed since
+    }
+  }
+  if ((ctx.kinds.includes("image") || ctx.kinds.includes("frame")) && !(ctx.images || []).length && a) {
+    const r = unionRect(a.parts.map(anchorRect));
+    if (r.bottom > 0 && r.top < innerHeight) ctx.images = [await captureRect(r)];
+  }
+  return { ctx, target };
+}
+
+async function openPinCard(pin, pinEl) {
+  clearUI();
+  let petId = pin.petId && lib.pets.some((p) => p.id === pin.petId) ? pin.petId : lib.pets[0]?.id;
+  const { history = [] } = await chrome.storage.local.get("history");
+  const byId = new Map(history.map((e) => [e.id, e]));
+  const ctx = pin.live || pin.ctx;
+
+  const runsBox = el("div", { class: "pin-runs" });
+  pin.runs.forEach((r, i) => {
+    const e = byId.get(r.historyId);
+    const text = e ? e.final || e.output : "";
+    const outBox = el("div", { class: "pin-out" });
+    if (text) renderAnswer(outBox, text, true);
+    else outBox.textContent = "(This answer is no longer in History.)";
+    const skill = r.skillId ? lib.skills.find((s) => s.id === r.skillId) : null;
+    const item = el("details", { class: "pin-run", open: i === 0 }, [
+      el("summary", {}, [
+        skill ? sticker(skill, 22) : el("span", { html: ICON.search, class: "muted" }),
+        el("span", { class: "grow", text: r.skillName }),
+        r.status === "posted" ? el("span", { class: "hstat s-posted", text: "Posted" }) : e?.status === "approved" ? el("span", { class: "hstat s-approved", text: "Applied" }) : null,
+        el("span", { class: "muted", style: { fontSize: "11px" }, text: timeAgo(r.at) }),
+      ]),
+      outBox,
+      text ? el("div", { class: "hact" }, [el("button", { class: "link", text: "Copy", onclick: async (ev) => { await copyRich(text); ev.target.textContent = "Copied"; } })]) : null,
+    ]);
+    runsBox.append(item);
+  });
+
+  const skillsRow = el("div", { class: "pin-skills" });
+  const petsRow = el("div", { class: "pin-pets", role: "group", "aria-label": "Which pet" });
+  const ask = el("input", { "aria-label": "Ask a follow-up about this spot", placeholder: "Ask a follow-up…" });
+  const renderSkills = () => {
+    const pet = lib.pets.find((p) => p.id === petId);
+    petsRow.replaceChildren(...lib.pets.map((p) => el("button", { class: "pp", "aria-pressed": String(p.id === petId), "aria-label": p.name, title: p.name, html: petSvg(p, 26), onclick: () => ((petId = p.id), renderSkills()) })));
+    const access = pet ? petCanRead(pet, ctx) : { ok: false, blocked: [] };
+    const fits = pet && access.ok ? skillsFor(lib, ctx, { petId: pet.id, usage }).slice(0, 6) : [];
+    skillsRow.replaceChildren(
+      ...(fits.length
+        ? fits.map((s) => el("button", { class: "chip-skill", onclick: () => go({ skillId: s.id, petId }) }, [sticker(s, 20), s.name]))
+        : [el("span", { class: "muted", style: { fontSize: "11.5px" }, text: access.ok ? `None of ${pet?.name}'s skills fit this.` : `${pet?.name} can't read ${access.blocked.join(" or ")}.` })]),
+    );
+    ask.placeholder = `Ask ${pet?.name || "a pet"} a follow-up…`;
+  };
+  const go = async (opts) => {
+    const { ctx: fresh, target } = await pinContext(pin);
+    const skill = opts.skillId ? lib.skills.find((s) => s.id === opts.skillId) : null;
+    if (skill && /\{\{request\}\}/.test(skill.prompt)) {
+      const req = prompt("How should it change?"); // eslint-disable-line no-alert
+      if (!req) return;
+      opts.request = req;
+    }
+    run(fresh, target, opts);
+  };
+  ask.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter" && ask.value.trim()) go({ instruction: followUp(pin, byId, ask.value.trim()), petId });
+    if (e.key === "Escape") clearUI();
+  });
+  ["keyup", "keypress"].forEach((t) => ask.addEventListener(t, (e) => e.stopPropagation()));
+
+  const card = el("div", { class: "card pincard", role: "dialog", "data-pin": pin.id, "aria-label": "Answers left here" }, [
+    el("div", { class: "top" }, [
+      el("span", { class: "display", text: "Left here" }),
+      el("span", { class: "muted", style: { fontSize: "11px", marginLeft: "auto" }, text: `${pin.runs.length} answer${pin.runs.length === 1 ? "" : "s"}` }),
+      expandButton(() => card),
+      el("button", { class: "x", "aria-label": "Close", text: "×", onclick: () => clearUI() }),
+    ]),
+    el("div", { class: "ctx", text: `On: ${ctx.label || "this spot"}` }),
+    runsBox,
+    el("div", { class: "pin-more" }, [el("div", { class: "lbl", text: "Do more here" }), petsRow, skillsRow, el("div", { class: "ask" }, [ask])]),
+    el("div", { class: "foot" }, [
+      el("button", { class: "link", text: "Remove this pin", onclick: () => (removePin(pin), clearUI()) }),
+      el("button", { class: "link", style: { marginLeft: "auto" }, text: "History", onclick: () => openHistory() }),
+    ]),
+  ]);
+  renderSkills();
+  layer.append(card);
+  const pt = pinPoint(pin) || { x: pinEl.getBoundingClientRect().right, y: pinEl.getBoundingClientRect().top };
+  placeBesidePin(card, pt);
+  showPinOutline(pin);
+  setOpen("card", true);
+  card.querySelector(".chip-skill,input")?.focus();
+}
+
+/** Follow-ups carry the earlier answers so "make it shorter" etc. has context. */
+function followUp(pin, byId, question) {
+  const prev = pin.runs
+    .slice(0, 3)
+    .map((r) => byId.get(r.historyId))
+    .filter(Boolean)
+    .map((e) => `### ${e.skillName}\n${(e.final || e.output || "").slice(0, 3000)}`)
+    .join("\n\n");
+  return prev ? `Earlier answers about this same content:\n\n${prev}\n\nFollow-up request: ${question}` : question;
+}
 
 let selectEnter = null;
 const boxPolygon = (r) => [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]];
@@ -1423,6 +1768,8 @@ function run(ctx, target, opts) {
       if (load.isConnected) load.replaceWith(body);
       if (!proposing) renderAnswer(out, text, true);
       finish(true);
+      // Leave the pet where it worked, so this answer stays reachable on the page.
+      if (historyId) pinRun(ctx, pet, skill, label, historyId);
       if (approve) {
         approve.hidden = false;
         proposal.removeAttribute("readonly");
@@ -1467,7 +1814,8 @@ function run(ctx, target, opts) {
       approve.disabled = false;
     } else {
       logStatus("posted", final);
-      status.textContent = "Comment posted to Figma ✓";
+      markPinRun(historyId, "posted");
+      status.textContent = "Comment posted to Figma ✓ (inside the frame)";
       approve.textContent = "Posted";
     }
   });

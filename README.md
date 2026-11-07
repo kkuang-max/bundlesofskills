@@ -57,6 +57,19 @@ Each pet is one of seven characters: **cat, dog, bird, frog, bunny, bear, ghost*
 
 Answers render as formatted Markdown: headings, **bold**, *italic*, `code`, code blocks, bullet and numbered lists (nested), checklists, quotes, tables and links. The renderer builds page elements directly, so model text is never inserted as HTML, and links only work if they're http(s) or mailto. The prompt asks for Markdown when it helps scanning; rewrites and Figma comments stay plain text, because they go straight into your document. **Copy** puts rich text on the clipboard, so pasting into Docs or Gmail keeps the formatting, and plain-text apps get the Markdown.
 
+### Pets stay where they worked (pins)
+
+After a pet generates something, it **stays on the page at that exact spot** as a small pin:
+- on the element you dropped it on, at the point where you dropped it
+- or at the corner of your selection or Select pick
+
+The pin is attached to the content, so it scrolls and reflows with the page, and it's **saved per page**: next time you open the page, the pins are back where they were. If a site re-renders, the extension finds the element again by its position in the page structure.
+
+- **Hover** a pin to outline what it worked on. **Click** it to reopen everything generated there: rendered Markdown, quiz answers still hidden until you reveal them, what was applied or posted, and Copy.
+- **Do more here:** from the pin, pick any pet and run another skill on the same spot, or **ask a follow-up**. Follow-ups include the earlier answers, so "make it shorter" or "turn that into a table" work. New runs on the same spot join the same pin (the badge shows how many).
+- **Figma:** the pet sits inside the frame, where you dropped it, with a *Posted* badge once you approve the comment. The Figma comment itself is pinned inside the frame (24px in from its top-left corner) rather than on its edge. If you pan or zoom the Figma canvas, the pet pin doesn't move with it, because Figma doesn't share where the frame is on screen. The real Figma comment always stays on the frame.
+- Pins can be turned off in Options, removed one at a time from the pin card, and keep the 60 most recent pages.
+
 ### The selection is pinned to the page
 
 What you pick with **Select** isn't a floating overlay. Each part is attached to the element it came from (a box is attached to that spot in the document). Its outline scrolls with the page and follows layout changes, and you can still drop a pet on it after scrolling. While the Select tool is open, the scroll wheel still scrolls the page, or the inner scroller under your pointer. The tool's full-screen layer only exists while you're picking; once you finish, the page is fully clickable again and only the outline stays.
@@ -145,6 +158,7 @@ npm run e2e
 - minimize to small pets / dots, expand on hover, selection and Select, hover cards, Alt+1 / 1–9 / Alt-drag box select / click + Shift-click select / Alt+/;
 - the selection stays pinned to the paragraph when scrolling and is still a drop target; the page scrolls under the Select tool;
 - answers render as Markdown (heading, bold, table, checklist), no raw syntax;
+- pins: a pet is left where it worked, scrolls with the page, reopens answers, runs more skills and follow-ups on the same spot, survives a reload; the Figma pin sits in the frame with a Posted badge, and the comment is placed inside the frame;
 - characters: species per pet, switching one in the Studio updates the dock live;
 - a long quiz answer scrolls even when the page swallows wheel events, the panel expands, and answers stay hidden until clicked;
 - the loading screen appears while generating; history logs approved / posted / Studio-test runs; the in-page History panel and the Studio History tab
