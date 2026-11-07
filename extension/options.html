@@ -37,13 +37,16 @@
 <small>Lets pets read a selected Figma frame crisply and post approved comments on it. Make one in Figma › Settings › Security › Personal access tokens (file read + comments write). Without it, pets work from a screenshot.</small>
 
 <div class="row"><input id="squadVisible" type="checkbox"><label for="squadVisible">Show the pet squad on pages</label></div>
+<div class="row" style="margin-top:8px"><input id="squadCollapsed" type="checkbox"><label for="squadCollapsed">Keep the squad minimized (it opens when you hover, select text or lasso)</label></div>
+<label for="squadMiniStyle">When minimized, show</label>
+<select id="squadMiniStyle"><option value="pets">Small pets</option><option value="dots">Dots</option></select>
 <div class="row" style="margin-top:8px"><input id="peekEnabled" type="checkbox"><label for="peekEnabled">Peek when I select text</label></div>
 
 <label for="peekBlocked">Never peek on these sites (one per line)</label>
 <textarea id="peekBlocked" rows="4" placeholder="mail.google.com"></textarea>
 
 <button id="save" type="button">Save</button><span id="status" role="status"></span>
-<p><small>Shortcuts: <b>Alt+Shift+P</b> search skills, <b>Alt+Shift+L</b> lasso, <b>Alt+Shift+S</b> show/hide the squad, <b>Alt+Shift+R</b> rerun the last skill. Change them at <code>chrome://extensions/shortcuts</code>.</small></p>
+<p><small>Shortcuts: <b>Alt+Shift+P</b> search skills, <b>Alt+Shift+L</b> lasso, <b>Alt+Shift+S</b> show/hide the squad, <b>Alt+Shift+R</b> rerun the last skill, <b>Alt+1…9</b> use pet 1–9 on your pick, <b>Alt+drag</b> lasso anywhere, <b>Alt+/</b> all shortcuts. Change them at <code>chrome://extensions/shortcuts</code>.</small></p>
 <script src="dist/options.js"></script>
 </body>
 </html>

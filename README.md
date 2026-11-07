@@ -33,6 +33,22 @@ Edits apply to open tabs immediately; no rebuild.
 | **Select text** | Peek: the top 3 guesses pop up beside it (turn this off in Options). |
 | **Alt+Shift+S** / **Alt+Shift+R** | Show/hide the squad · rerun the last skill on the current pick. |
 
+### Minimized squad, hover cards, shortcuts
+
+- **Minimize** (the – at the end of the bar, or in Options) shrinks the squad to **small pets** or **dots** (pick in Options). It expands on its own while you **hover** it, **select text**, **lasso**, have a **pick**, **drag** a pet, or use a pet's card. Then it shrinks back.
+- **Hover a pet** to see what it can do: its skills with stickers, which ones rewrite or comment (after you approve), what it may read, and its shortcut. If you've selected or lassoed something, skills that don't fit it are dimmed ("For your pick: 3 fit").
+- **Shortcuts** (⌥ = Alt; **Alt+/** shows them all on the page):
+
+| Keys | Does |
+|---|---|
+| **Alt+drag** anywhere | Lasso right away, no button needed |
+| **Alt+Shift+L** | Start the lasso. Hold **Shift** while drawing for a box |
+| **1–9** (when something is picked/selected and you're not typing) | Send it to pet 1–9 |
+| **Alt+1–9** | Same, and works while typing (uses the text selected in the field) |
+| In a pet's card: **1–9**, **↑↓**, **/** | Run skill n · move · ask anything |
+| **Esc** | Cancel the lasso / clear the pick / close |
+| **Alt+Shift+P / H / S / R** | Search · History · show/hide squad · rerun last |
+
 ### 3. History and loading
 
 - **Every generation is logged**, from pages and from the Studio's *Try it*. Each entry records the skill, the pet, the site, what it read, the output, and what happened next: *Generated*, *Approved & applied* (including your edits before approving), *Posted to Figma*, *Discarded*, *Stopped* or *Failed*.
@@ -108,6 +124,7 @@ npm run e2e
 - the search bar
 - a fake Figma file → drag Pixel onto the frame → approve → a comment is posted to node `12:34` with the frame's text layers in the prompt
 - Studio: drag a skill onto a pet, create a new skill and assign it
+- minimize to small pets / dots, expand on hover, selection and lasso, hover cards, Alt+1 / 1–9 / Alt-drag lasso / Shift box lasso / Alt+/;
 - the loading screen appears while generating; history logs approved / posted / Studio-test runs; the in-page History panel and the Studio History tab
 
 Screenshots go to `test/screenshots/`.

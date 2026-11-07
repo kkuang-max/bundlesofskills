@@ -152,6 +152,100 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await page.keyboard.press("Escape");
   console.log("✓ search bar");
 
+  // ---- minimized squad, hover/selection expand, hover cards, shortcuts
+  const dockClass = () => page.evaluate(() => document.querySelector("skill-pet-root").shadowRoot.querySelector(".dock").className);
+  const dockWidth = () => page.evaluate(() => document.querySelector("skill-pet-root").shadowRoot.querySelector(".dock").getBoundingClientRect().width);
+  await page.mouse.click(900, 40); // clear selection
+  await page.getByRole("button", { name: "Minimize the squad" }).click();
+  await page.mouse.move(900, 300);
+  await sleep(700);
+  const fullW = 600;
+  const miniW = await dockWidth();
+  await shot(page, "9b-minimized-pets");
+  assert.ok(/mini/.test(await dockClass()) && miniW < fullW * 0.6, `minimized is small (${miniW}px)`);
+  // hover → expands
+  const db = await page.evaluate(() => { const r = document.querySelector("skill-pet-root").shadowRoot.querySelector(".dock").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await page.mouse.move(db.x, db.y);
+  await sleep(450);
+  assert.ok(/open/.test(await dockClass()), "hover expands");
+  await shot(page, "9c-hover-expands");
+  await page.mouse.move(900, 300);
+  await sleep(800);
+  assert.ok(!/open/.test(await dockClass()), "leaving collapses again");
+  // dots
+  await sw.evaluate(() => chrome.storage.local.set({ squadMiniStyle: "dots" }));
+  await sleep(300);
+  await shot(page, "9d-minimized-dots");
+  assert.ok((await dockWidth()) < miniW, "dots are smaller still");
+  // selecting text expands the bar
+  await page.locator("#p").selectText();
+  await sleep(250);
+  assert.ok(/open/.test(await dockClass()), "selection expands");
+  // hover a pet → what it can do (with your selection taken into account)
+  await sleep(300);
+  const scoutBox = await page.getByRole("button", { name: /^Scout,/ }).boundingBox();
+  await page.mouse.move(scoutBox.x + scoutBox.width / 2, scoutBox.y + 20);
+  await sleep(450);
+  const tip = page.getByRole("tooltip");
+  assert.ok(await tip.isVisible(), "hover card");
+  assert.match(await tip.innerText(), /Summarize[\s\S]*For your pick|For your pick[\s\S]*Summarize/);
+  await shot(page, "9e-hover-card");
+  // Alt+1 with a selection → Scout's card; then "1" runs its first skill
+  await page.keyboard.press("Alt+Digit1");
+  await sleep(300);
+  assert.ok(await page.getByRole("dialog", { name: "Scout's skills" }).isVisible(), "Alt+1 opens pet 1");
+  await shot(page, "9f-alt1-card");
+  await page.keyboard.press("Digit1");
+  await sleep(1700);
+  assert.match(calls.at(-1).messages[1].content.at(-1).text ?? calls.at(-1).messages[1].content[0].text, /Skill:/);
+  await page.keyboard.press("Escape");
+  await page.mouse.click(900, 40);
+  // Alt+drag lasso anywhere, then "3"? no: "1" → Scout on the pick
+  const pb = await page.locator("#p").boundingBox();
+  await page.keyboard.down("Alt");
+  await page.mouse.move(pb.x - 8, pb.y - 8);
+  await page.mouse.down();
+  for (const [x, y] of [[pb.x + pb.width + 8, pb.y - 8], [pb.x + pb.width + 8, pb.y + pb.height + 8], [pb.x - 8, pb.y + pb.height + 8], [pb.x - 8, pb.y]]) await page.mouse.move(x, y, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await sleep(500);
+  assert.ok(/open/.test(await dockClass()), "a pick keeps the bar open");
+  await shot(page, "9g-alt-drag-lasso");
+  await page.keyboard.press("Digit2");
+  await sleep(300);
+  assert.ok(await page.getByRole("dialog", { name: "Quill's skills" }).isVisible(), "2 sends the pick to pet 2");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape"); // clears the pick
+  // Shift = box lasso (started with the in-page Alt+Shift+L)
+  await page.keyboard.press("Alt+Shift+KeyL");
+  await sleep(150);
+  await page.keyboard.down("Shift");
+  await page.mouse.move(pb.x - 6, pb.y - 6);
+  await page.mouse.down();
+  await page.mouse.move(pb.x + 200, pb.y + pb.height + 6, { steps: 8 });
+  await shot(page, "9h-box-lasso");
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await sleep(500);
+  const chipText = await page.getByRole("status").filter({ hasText: "Picked" }).innerText();
+  assert.match(chipText, /Picked: \d+ words/);
+  await page.keyboard.press("Escape");
+  // Alt+2 while typing in the textarea → Quill on the field's selection
+  await page.evaluate(() => { const t = document.getElementById("t"); t.focus(); t.setSelectionRange(0, 4); });
+  await page.keyboard.press("Alt+Digit2");
+  await sleep(300);
+  assert.match(await page.getByRole("dialog", { name: "Quill's skills" }).innerText(), /1 word \(editable\)/);
+  await page.keyboard.press("Escape");
+  // Alt+/ → cheat sheet
+  await page.keyboard.press("Alt+Slash");
+  await sleep(200);
+  assert.ok(await page.getByRole("dialog", { name: "Keyboard shortcuts" }).isVisible());
+  await shot(page, "9i-shortcuts");
+  await page.keyboard.press("Escape");
+  await sw.evaluate(() => chrome.storage.local.set({ squadCollapsed: false, squadMiniStyle: "pets" }));
+  await sleep(300);
+  console.log("✓ minimize (small pets / dots), hover + selection + lasso expand, hover cards, shortcuts");
+
   // ---- 5) fake Figma: drag Pixel onto the canvas → approve & post comment
   const fig = await ctx.newPage();
   await fig.goto("https://www.figma.com/design/AbC123/Checkout?node-id=12-34");

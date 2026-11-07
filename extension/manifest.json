@@ -56,6 +56,9 @@
         "mac": "Alt+Shift+R"
       },
       "description": "Rerun the last skill on the current pick"
+    },
+    "history": {
+      "description": "History for this site (assign a key here; Alt+Shift+H also works on pages)"
     }
   },
   "action": {
