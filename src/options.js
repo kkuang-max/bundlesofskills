@@ -1,4 +1,6 @@
-const DEFAULTS = { apiKey: "", model: "claude-opus-5-5", effort: "low", peekEnabled: true, peekBlocked: [] };
+import { DEFAULTS as MODEL_DEFAULTS } from "./openrouter.js";
+
+const DEFAULTS = { apiKey: "", ...MODEL_DEFAULTS, peekEnabled: true, peekBlocked: [] };
 const $ = (id) => document.getElementById(id);
 
 chrome.storage.local.get(DEFAULTS).then((s) => {

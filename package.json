@@ -3,16 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MVP: a pet companion that runs Claude skills on whatever you select in the browser.",
+  "description": "MVP: a pet companion that runs AI skills (via OpenRouter) on whatever you select in the browser.",
   "scripts": {
     "build": "node build.mjs",
     "test": "node --test test/*.test.js",
     "e2e": "PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1 node test/e2e.cjs"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^1.6.0"
-  },
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.12"
   }
 }

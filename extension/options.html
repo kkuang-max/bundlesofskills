@@ -14,17 +14,19 @@
 </head>
 <body>
 <h1>Skill Pet</h1>
-<p><small>Your key is stored only in this browser profile (<code>chrome.storage.local</code>) and sent only to api.anthropic.com. MVP only: a real release would go through a backend.</small></p>
+<p><small>Your key is stored only in this browser profile (<code>chrome.storage.local</code>) and sent only to openrouter.ai. MVP only: a real release would go through a backend.</small></p>
 
-<label for="apiKey">Anthropic API key</label>
-<input id="apiKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+<label for="apiKey">OpenRouter API key</label>
+<input id="apiKey" type="password" autocomplete="off" placeholder="sk-or-v1-…">
+<small>Create one at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.</small>
 
 <label for="model">Model</label>
 <input id="model" type="text" spellcheck="false">
+<small>Any id from <a href="https://openrouter.ai/models" target="_blank" rel="noopener">openrouter.ai/models</a>, e.g. <code>anthropic/claude-opus-5.5</code>, <code>anthropic/claude-haiku-4.5</code>.</small>
 
-<label for="effort">Effort</label>
+<label for="effort">Reasoning effort</label>
 <select id="effort">
-  <option value="low">low (fastest, fine for quick skills)</option>
+  <option value="low">low (fastest, fine for quick skills; ignored by non-reasoning models)</option>
   <option value="medium">medium</option>
   <option value="high">high</option>
 </select>

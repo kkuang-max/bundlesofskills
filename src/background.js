@@ -1,14 +1,11 @@
-// MV3 service worker: owns the API key and the Claude call, relays hotkeys to
-// the tab. The page never sees the key; the content script talks to us over a
-// runtime Port and gets streamed text back.
-import Anthropic from "@anthropic-ai/sdk";
+// MV3 service worker: owns the OpenRouter key and the model call, relays
+// hotkeys to the tab. The page never sees the key; the content script talks to
+// us over a runtime Port and gets streamed text back.
 import { buildRequest } from "./skills.js";
-
-const DEFAULT_MODEL = "claude-opus-5-5";
+import { DEFAULTS, streamChat } from "./openrouter.js";
 
 async function settings() {
-  const s = await chrome.storage.local.get({ apiKey: "", model: DEFAULT_MODEL, effort: "low" });
-  return s;
+  return chrome.storage.local.get({ apiKey: "", model: DEFAULTS.model, effort: DEFAULTS.effort });
 }
 
 // --- Hotkeys (chrome://extensions/shortcuts lets the user rebind them) ------
@@ -30,19 +27,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "summon" && tab?.id) chrome.tabs.sendMessage(tab.id, { type: "summon" }).catch(() => {});
 });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "open-options") chrome.runtime.openOptionsPage();
-  if (msg?.type === "has-key") {
-    settings().then((s) => sendResponse({ hasKey: Boolean(s.apiKey) }));
-    return true;
-  }
 });
 
 // --- Running a skill ---------------------------------------------------------
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "run-skill") return;
-  let stream = null;
-  port.onDisconnect.addListener(() => stream?.abort());
+  const abort = new AbortController();
+  port.onDisconnect.addListener(() => abort.abort());
 
   port.onMessage.addListener(async (msg) => {
     const post = (m) => {
@@ -54,7 +47,7 @@ chrome.runtime.onConnect.addListener((port) => {
     };
     const { apiKey, model, effort } = await settings();
     if (!apiKey) {
-      post({ type: "error", code: "no-key", message: "Add your Anthropic API key in the extension options first." });
+      post({ type: "error", code: "no-key", message: "Add your OpenRouter API key in the extension options first." });
       return;
     }
 
@@ -66,35 +59,20 @@ chrome.runtime.onConnect.addListener((port) => {
       return;
     }
 
-    // MVP only: calling the API straight from the extension with the user's own
-    // key. A shipped product would route through its own backend instead.
-    const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     try {
-      stream = client.beta.messages.stream({
+      const result = await streamChat({
+        apiKey,
         model,
-        max_tokens: 16000,
-        output_config: { effort },
-        // Server-side refusal fallback: if the main model declines, the API
-        // retries on a fallback model inside the same call.
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
+        effort,
         system: req.system,
-        messages: [{ role: "user", content: req.user }],
+        user: req.user,
+        signal: abort.signal,
+        onText: (delta) => post({ type: "delta", text: delta }),
       });
-      stream.on("text", (delta) => post({ type: "delta", text: delta }));
-      const final = await stream.finalMessage();
-      if (final.stop_reason === "refusal") {
-        post({ type: "error", message: "The model declined this one." });
-      } else {
-        post({ type: "done", stopReason: final.stop_reason, usage: final.usage });
-      }
+      post({ type: "done", stopReason: result.finishReason, usage: result.usage });
     } catch (e) {
-      if (e instanceof Anthropic.APIUserAbortError) return;
-      let message = String(e?.message || e);
-      if (e instanceof Anthropic.AuthenticationError) message = "That API key was rejected. Check it in the options.";
-      else if (e instanceof Anthropic.RateLimitError) message = "Rate limited. Try again in a moment.";
-      else if (e instanceof Anthropic.APIConnectionError) message = "Couldn't reach the Claude API.";
-      post({ type: "error", message });
+      if (e.name === "AbortError") return;
+      post({ type: "error", code: e.code, message: e.message || String(e) });
     }
   });
 });

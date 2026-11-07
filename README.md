@@ -1,6 +1,6 @@
 # Skill Pet: MVP
 
-A working prototype of the **Skill Companion** concepts: a small pet that runs Claude skills on whatever you're pointing at. It has no polished UI yet; the goal is to show how the interaction works and to test whether the idea holds up.
+A working prototype of the **Skill Companion** concepts: a small pet that runs AI skills on whatever you're pointing at. Models are called through **[OpenRouter](https://openrouter.ai)**, so one key works with Claude, GPT, Gemini, Llama and the rest. It has no polished UI yet; the goal is to show how the interaction works and to test whether the idea holds up.
 
 It's a **Chrome extension (Manifest V3)**. It builds two of the ten concepts end to end (**07 Peek** and **08 Burrow**), the context "sniffing" behind **01 Fetch**, and the "rerun last trick" from **02 Tap wheel**.
 
@@ -29,11 +29,11 @@ The command bar puts prefix matches above this score. All of it is pure, unit-te
 ## Architecture
 
 ```
- page (any site)                         extension service worker              Claude API
+ page (any site)                         extension service worker              OpenRouter
 ┌───────────────────────────┐  Port   ┌──────────────────────────────┐  HTTPS ┌──────────┐
-│ content.js                │────────▶│ background.js                │───────▶│ messages │
-│  • reads selection/context│ context │  • holds API key (storage)    │ stream │ .stream  │
-│  • Peek / bar / result UI │◀────────│  • @anthropic-ai/sdk stream  │◀───────│          │
+│ content.js                │────────▶│ background.js                │───────▶│ /chat/   │
+│  • reads selection/context│ context │  • holds API key (storage)    │ stream │ complet- │
+│  • Peek / bar / result UI │◀────────│  • openrouter.js (SSE fetch)  │◀───────│ ions     │
 │    in a closed shadow root│  deltas │  • hotkeys, context menu     │        └──────────┘
 │  • writes result back     │         └──────────────────────────────┘
 └───────────────────────────┘
@@ -42,7 +42,8 @@ The command bar puts prefix matches above this score. All of it is pure, unit-te
 - The UI lives in a **closed shadow root**, so page CSS can't break it and page JS can't reach it.
 - The **API key never enters the page**. Only the service worker reads it from `chrome.storage.local`.
 - The selection goes to the model wrapped in `<selected_content>`, and the system prompt treats it as data, not instructions. This is a basic guard against prompt injection from web pages.
-- Model `claude-opus-5-5` at `effort: low` (quick skills should feel instant). Both can be changed in Options. The server-side refusal fallback is turned on.
+- `src/openrouter.js` is a ~100-line fetch client for OpenRouter's OpenAI-style `/chat/completions` endpoint. It streams the SSE response and turns HTTP and mid-stream errors (bad key, no credits, unknown model, provider down) into readable messages.
+- The default model is `anthropic/claude-opus-5.5` with reasoning effort `low`, so quick skills feel instant. You can use any id from [openrouter.ai/models](https://openrouter.ai/models); change it in Options. A small, fast model such as `anthropic/claude-haiku-4.5` also suits these skills well.
 
 ## Run it
 
@@ -53,7 +54,7 @@ npm run build
 ```
 
 1. Go to `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick the `extension/` folder.
-2. The options page opens. Paste an Anthropic API key and save.
+2. The options page opens. Paste an OpenRouter key (create one at [openrouter.ai/keys](https://openrouter.ai/keys)) and save. Change the model there if you like.
 3. Select some text on any page, or press **Alt+Shift+P**.
 
 ### Tests
@@ -66,7 +67,7 @@ npm test
 npm run build && npm run e2e
 ```
 
-`npm test` runs the ranking/prompt unit tests. `npm run e2e` loads the real extension in headless Chromium with a **faked** Claude API, then walks through peek → missing-key error → command bar → streamed result → Replace selection. Screenshots go to `test/screenshots/`.
+`npm test` runs the ranking/prompt and OpenRouter-client unit tests. `npm run e2e` loads the real extension in headless Chromium with a **faked** OpenRouter API, then walks through peek → missing-key error → command bar → streamed result → Replace selection. Screenshots go to `test/screenshots/`.
 
 ## Feasibility: extension vs. desktop app
 
@@ -104,7 +105,7 @@ npm run build && npm run e2e
 3. **01 Fetch** (context-ranked skills): ✅ ranking built. Dragging the pet onto a spot needs the desktop app.
 4. **02 Tap wheel**: ✅ "rerun last" built. A radial menu is a UI swap on the bar. A true double-tap needs the desktop app.
 5. **05 Charm collar** (loadouts with shared docs): next step. Add `loadouts: {skills[], contextFiles[]}` and auto-equip by site. Pure data, no new platform work.
-6. **06 Feeding bowl**: feasible in the extension for in-page drops and pasted screenshots (Claude reads images). Dropping from the Finder or Desktop needs the desktop app.
+6. **06 Feeding bowl**: feasible in the extension for in-page drops and pasted screenshots (vision models read images). Dropping from the Finder or Desktop needs the desktop app.
 7. **03 Skill stickers**: the "badge stays on the content" part means anchoring to other apps' DOM, which is fragile. Do it in-browser only, if at all.
 8. **04 Pet squad**: per-pet permissions are a product/data-model decision rather than a platform blocker.
 9. **10 Trick trail**: chaining is easy on the backend (feed output N into skill N+1). The hopping-pet UI is the real work.
