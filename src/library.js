@@ -92,9 +92,9 @@ export const TEMPLATES = [
     "Write concise alt text for this image (under 25 words), then one line on anything notable in it.", {}),
   // ---- school
   t("quiz", "Quiz me", "Quiz", "#FFD86B", "square", ["text", "image"], "answer",
-    "Write 3 short quiz questions that test understanding of this content, then the answers under a 'Answers' heading.", { apps: ["wiki", "docs"] }),
+    "Write 4 short quiz questions that test understanding of this content, numbered 1–4. Do not hint at the answers. Then output a line containing exactly === ANSWERS === and, after it, the numbered answers, one per line, each with a one-sentence explanation.", { apps: ["wiki", "docs"] }),
   t("flashcards", "Make flashcards", "Cards", "#9ED8C5", "blob", ["text", "image"], "answer",
-    "Turn the key ideas into up to 6 flashcards, one per line as 'Q: … | A: …'.", { apps: ["wiki"] }),
+    "Turn the key ideas into up to 6 flashcards. First list only the fronts (questions or terms), numbered. Then output a line containing exactly === ANSWERS === and, after it, the matching backs, numbered the same way, one per line.", { apps: ["wiki"] }),
 ];
 
 function t(id, name, label, color, shape, accepts, action, prompt, boost) {
@@ -114,9 +114,20 @@ export function defaultLibrary() {
 }
 
 /** Accept whatever is in storage, fill gaps, drop dangling references. */
+// Template prompts we've since improved. Untouched copies in storage get upgraded.
+const LEGACY_PROMPTS = {
+  quiz: ["Write 3 short quiz questions that test understanding of this content, then the answers under a 'Answers' heading."],
+  flashcards: ["Turn the key ideas into up to 6 flashcards, one per line as 'Q: … | A: …'."],
+};
+function upgradeTemplate(s) {
+  if (!LEGACY_PROMPTS[s.id]?.includes(s.prompt)) return s;
+  const now = TEMPLATES.find((x) => x.id === s.id);
+  return now ? { ...s, prompt: now.prompt } : s;
+}
+
 export function normalizeLibrary(stored) {
   if (!stored || !Array.isArray(stored.skills) || !Array.isArray(stored.pets)) return defaultLibrary();
-  const skills = stored.skills.filter((s) => s && s.id && s.name && s.prompt).map((s) => ({
+  const skills = stored.skills.filter((s) => s && s.id && s.name && s.prompt).map(upgradeTemplate).map((s) => ({
     ...s,
     accepts: (s.accepts || ["text"]).filter((k) => KINDS.includes(k)),
     action: ["answer", "replace", "comment"].includes(s.action) ? s.action : "answer",
@@ -318,4 +329,28 @@ export function petSvg(color, size = 52, happy = false) {
   size = Number(size) || 52;
   const mouth = happy ? `<path d="M28 37q4 5 8 0" fill="#1B1A1F" stroke="#1B1A1F" stroke-width="2" stroke-linecap="round"/><circle cx="19" cy="38" r="3" fill="#F47C6A" opacity=".6"/><circle cx="45" cy="38" r="3" fill="#F47C6A" opacity=".6"/>` : `<path d="M29 38q3 3 6 0" fill="none" stroke="#1B1A1F" stroke-width="2.2" stroke-linecap="round"/>`;
   return `<svg width="${size}" height="${Math.round(size * 0.92)}" viewBox="0 0 64 60" aria-hidden="true"><path d="M16 20L12 5l13 7z" fill="${color}" stroke="#1B1A1F" stroke-width="2.5" stroke-linejoin="round"/><path d="M48 20l4-15-13 7z" fill="${color}" stroke="#1B1A1F" stroke-width="2.5" stroke-linejoin="round"/><path d="M10 34c0-15 10-25 22-25s22 10 22 25c0 13-9 20-22 20S10 47 10 34z" fill="${color}" stroke="#1B1A1F" stroke-width="2.5"/><circle cx="25" cy="31" r="3" fill="#1B1A1F"/><circle cx="39" cy="31" r="3" fill="#1B1A1F"/>${mouth}</svg>`;
+}
+
+// ---------- "reveal later" outputs (quizzes, flashcards) -----------------------------
+/** The line a skill prints before answers that should stay hidden until revealed. */
+export const REVEAL_MARKER = "=== ANSWERS ===";
+const REVEAL_RE = /^[ \t]*(?:={2,}[ \t]*answers?[ \t]*={2,}|#{1,3}[ \t]*answers?[ \t]*:?)[ \t]*$/im;
+
+/**
+ * Split an output into what to show now and answers to reveal later.
+ * Works on partial (streaming) text too: once the marker appears, everything
+ * after it is hidden. Returns {shown, answers: string[], hasReveal}.
+ */
+export function splitReveal(text) {
+  const m = REVEAL_RE.exec(text || "");
+  if (!m) return { shown: text || "", answers: [], hasReveal: false };
+  const shown = text.slice(0, m.index).replace(/\s+$/, "");
+  const rest = text.slice(m.index + m[0].length);
+  const answers = [];
+  for (const line of rest.split("\n")) {
+    if (!line.trim()) continue;
+    if (/^\s*(?:\d+[.)]|[-*•]|Q\d*[:.])\s+/.test(line) || !answers.length) answers.push(line.trim());
+    else answers[answers.length - 1] += "\n" + line.trim();
+  }
+  return { shown, answers, hasReveal: true };
 }

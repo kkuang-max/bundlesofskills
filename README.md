@@ -26,8 +26,8 @@ Edits apply to open tabs immediately; no rebuild.
 | Do this | What happens |
 |---|---|
 | **Drag a pet** onto something | A dashed outline shows what it will read ("Text", "Image", "Text field", "Selected Figma frame", "This page (screenshot)"). Drop, and the **pet card** opens with that pet's skills that fit, plus an *Ask Quill…* box. |
-| **Lasso** (dock button or **Alt+Shift+L**) | Draw around anything. Text inside the loop is collected; images or canvas apps inside it are screenshotted. Then drag a pet onto the pick, or just click a pet. |
-| **Click a pet** | Uses your lasso pick, or else your text selection. |
+| **Select** (dock button or **Alt+Shift+L**) | Like a design tool: hover highlights the paragraph, image, field or frame under the pointer, and **click** picks it. **Drag** a box to take exactly the words, images and canvas inside it. **Shift-click** adds more, and **Enter** finishes. Then drag a pet onto it, or press 1–9. |
+| **Click a pet** | Uses what you picked with Select, or else your text selection. |
 | **History** (dock button) | What the pets generated on this site (see below). |
 | **Search** (dock button or **Alt+Shift+P**) | The command bar from v1, now over every pet's skills, showing which pet owns each. |
 | **Select text** | Peek: the top 3 guesses pop up beside it (turn this off in Options). |
@@ -35,19 +35,25 @@ Edits apply to open tabs immediately; no rebuild.
 
 ### Minimized squad, hover cards, shortcuts
 
-- **Minimize** (the – at the end of the bar, or in Options) shrinks the squad to **small pets** or **dots** (pick in Options). It expands on its own while you **hover** it, **select text**, **lasso**, have a **pick**, **drag** a pet, or use a pet's card. Then it shrinks back.
-- **Hover a pet** to see what it can do: its skills with stickers, which ones rewrite or comment (after you approve), what it may read, and its shortcut. If you've selected or lassoed something, skills that don't fit it are dimmed ("For your pick: 3 fit").
+- **Minimize** (the – at the end of the bar, or in Options) shrinks the squad to **small pets** or **dots** (pick in Options). It expands on its own while you **hover** it, **select text**, use **Select**, have a **pick**, **drag** a pet, or use a pet's card. Then it shrinks back.
+- **Hover a pet** to see what it can do: its skills with stickers, which ones rewrite or comment (after you approve), what it may read, and its shortcut. If you have selected something, skills that don't fit it are dimmed ("For your pick: 3 fit").
 - **Shortcuts** (⌥ = Alt; **Alt+/** shows them all on the page):
 
 | Keys | Does |
 |---|---|
-| **Alt+drag** anywhere | Lasso right away, no button needed |
-| **Alt+Shift+L** | Start the lasso. Hold **Shift** while drawing for a box |
+| **Alt+click** / **Alt+drag** anywhere | Select the thing under the pointer / everything in a box, right away |
+| **Alt+Shift+L** | Select tool. **Shift-click** adds more, **Enter** finishes |
 | **1–9** (when something is picked/selected and you're not typing) | Send it to pet 1–9 |
 | **Alt+1–9** | Same, and works while typing (uses the text selected in the field) |
 | In a pet's card: **1–9**, **↑↓**, **/** | Run skill n · move · ask anything |
-| **Esc** | Cancel the lasso / clear the pick / close |
+| **Esc** | Cancel selecting / clear the selection / close |
 | **Alt+Shift+P / H / S / R** | Search · History · show/hide squad · rerun last |
+
+### Long answers and quizzes
+
+- Answers scroll inside the panel. This works even on Figma and Google Docs, which normally swallow the scroll wheel. The panel only follows new text while you're at the bottom, so you can scroll up and read during generation.
+- **Expand** (⤢ in the panel header) opens a large reading view. The page's History panel and the Studio's history items also have Expand.
+- **Reveal later:** *Quiz me* and *Make flashcards* show the questions with the answers hidden behind blurred cards. Click one to reveal it, or **Reveal all**. Answers stay hidden while generating too. Any skill can do this: tell it to print a line `=== ANSWERS ===` before the answers.
 
 ### 3. History and loading
 
@@ -57,7 +63,7 @@ Edits apply to open tabs immediately; no rebuild.
   - Stored locally (last 300 runs). Images aren't kept, only a count.
 - **Loading states:**
   - While generating, the panel shows the pet hopping, "Quill is rewriting…", what's being sent, an elapsed timer, skeleton lines and a **Stop** button. Text then streams in with a cursor.
-  - "Sniffing…" shows while a pet reads a Figma frame or takes a screenshot, and "Reading your pick…" while a lasso pick is processed.
+  - "Sniffing…" shows while a pet reads a Figma frame or takes a screenshot, and "Reading your pick…" while a Select pick is processed.
   - The Studio's *Try it* has its own loader and a Stop button.
 
 ### 4. Context awareness: what it knows from what you picked
@@ -69,7 +75,7 @@ Edits apply to open tabs immediately; no rebuild.
 | An image | a screenshot of it | image skills (describe, critique, microcopy) | — |
 | A **Figma** frame | the frame selected in Figma (from the URL's `node-id`). With a Figma token: a crisp render plus its text layers. Without one: a screenshot. | design skills | **Comments**: *Leave critique as comment* proposes a comment; **Approve & post** pins it to that frame through the Figma API |
 | **Google Docs / Sheets / Slides** page | a screenshot (these apps draw on a canvas, so there's no readable text) | text + image skills | Copy only |
-| A lasso pick | text inside the loop, plus a screenshot if it contains images or a canvas app | whatever fits both | — |
+| A **Select** pick (one or more things, or a box) | each thing as above; a box takes the words inside it plus a screenshot if it holds images or a canvas | whatever fits all of it | One selected field can be rewritten |
 
 Ranking also uses the app (Figma → design skills first, wikis → research), signals in the text (dates, non-Latin script), length, and what you use most. Nothing is sent to the model until you click a skill.
 
@@ -95,7 +101,7 @@ npm install && npm run build
  page (any site)                              service worker                     outside
 ┌────────────────────────────────┐ Port  ┌───────────────────────────┐
 │ content.js                     │──────▶│ background.js             │──▶ openrouter.ai (stream)
-│  dock · drag · lasso · cards   │◀──────│  keys live only here      │
+│  dock · drag · select · cards  │◀──────│  keys live only here      │
 │  reads text / screenshots      │       │  captureVisibleTab        │──▶ api.figma.com
 │  approve → write back          │       │  figma.js (frame, comment)│
 └────────────────────────────────┘       └───────────────────────────┘
@@ -117,14 +123,15 @@ npm test
 npm run e2e
 ```
 
-`npm test` has 18 unit tests covering matching, permissions, Figma URL parsing, request building, history and the OpenRouter client. `npm run e2e` loads the real extension in Chromium with OpenRouter and the Figma API **faked**, then checks:
+`npm test` has 20 unit tests covering matching, permissions, Figma URL parsing, request building, history and the OpenRouter client. `npm run e2e` loads the real extension in Chromium with OpenRouter and the Figma API **faked**, then checks:
 - drag Quill onto a field → approve a rewrite (and that nothing changes before approval)
 - drag Pixel onto an image → a screenshot is sent
-- lasso a paragraph → click Scout → summarize
+- box-select a paragraph → click Scout → summarize
 - the search bar
 - a fake Figma file → drag Pixel onto the frame → approve → a comment is posted to node `12:34` with the frame's text layers in the prompt
 - Studio: drag a skill onto a pet, create a new skill and assign it
-- minimize to small pets / dots, expand on hover, selection and lasso, hover cards, Alt+1 / 1–9 / Alt-drag lasso / Shift box lasso / Alt+/;
+- minimize to small pets / dots, expand on hover, selection and Select, hover cards, Alt+1 / 1–9 / Alt-drag box select / click + Shift-click select / Alt+/;
+- a long quiz answer scrolls even when the page swallows wheel events, the panel expands, and answers stay hidden until clicked;
 - the loading screen appears while generating; history logs approved / posted / Studio-test runs; the in-page History panel and the Studio History tab
 
 Screenshots go to `test/screenshots/`.
@@ -148,7 +155,7 @@ Screenshots go to `test/screenshots/`.
 | ✅ Write back into text fields and most rich editors | `setRangeText`; `execCommand('insertText')` keeps the editor's undo |
 | ✅ Hotkeys | `chrome.commands`, but **only while Chrome is focused**. There's a hard limit of 4 suggested shortcuts, and they need Ctrl/Alt (+Shift). A bare double-tap of ⌥ is impossible. |
 | ✅ Drag-and-drop files *onto the pet* inside a page | Standard DnD. Good enough for a browser-only "Feeding bowl". |
-| ⚠️ **Google Docs** | Docs draws text on a **canvas**, so `getSelection()` comes back empty. This build reads it by **screenshot + a vision model** (drag a pet onto the page, or lasso). Writing back needs the Docs API through an add-on. |
+| ⚠️ **Google Docs** | Docs draws text on a **canvas**, so `getSelection()` comes back empty. This build reads it by **screenshot + a vision model** (drag a pet onto the page, or use Select). Writing back needs the Docs API through an add-on. |
 | ⚠️ Iframes / shadow-DOM editors | You need `all_frames: true` and per-site handling. |
 | ❌ Other apps (Mail.app, Figma desktop, Slack desktop, VS Code…) | Out of reach. |
 | ❌ `chrome://` pages, the Web Store, the built-in PDF viewer | Content scripts are blocked there. |

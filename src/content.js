@@ -3,8 +3,8 @@
 //
 //   Dock     – the squad (04 Pet squad). DRAG a pet onto a paragraph, image,
 //              text field, Google Docs page or Figma frame; or CLICK a pet to
-//              use what you've already selected / lassoed.
-//   Lasso    – draw around anything (text, images, canvas apps) to pick it.
+//              use what you've already selected.
+//   Select   – click paragraphs / images / fields / frames, or drag a box; Shift adds more.
 //   Pet card – that pet's skills that fit what you dropped it on.
 //   Result   – streams the answer. Rewrites and comments are proposals: nothing
 //              changes until you press Approve.
@@ -22,9 +22,11 @@ import {
   STICKER_RADIUS,
   pointInPolygon,
   skillsFor,
+  splitReveal,
   suggestPet,
 } from "./library.js";
 import { STATUS_LABEL, filterHistory, timeAgo } from "./history.js";
+import { renderAnswer } from "./answer-view.js";
 
 const PEEK_MIN_CHARS = 12;
 const PEEK_TIMEOUT_MS = 4000;
@@ -36,7 +38,7 @@ let lib = normalizeLibrary(null);
 let usage = {};
 let prefs = { peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets" };
 let lastRun = null;
-let picked = null; // the current lasso pick: {polygon, rect, ctx, target}
+let picked = null; // what the select tool picked: {rect, ctx, target, svg, chip}
 
 chrome.storage.local.get({ library: null, usage: {}, peekEnabled: true, peekBlocked: [], squadVisible: true, squadCollapsed: false, squadMiniStyle: "pets", lastRun: null }).then((s) => {
   lib = normalizeLibrary(s.library);
@@ -94,7 +96,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .pin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;align-self:center}
 .pin:hover{background:#F2EFE9}
 
-/* minimized: small pets, or dots. Opens on hover / focus / selection / lasso / pick / drag. */
+/* minimized: small pets, or dots. Opens on hover / focus / text selection / select tool / pick / drag. */
 .dock.mini:not(.open){gap:8px;padding:6px 8px 6px 12px;border-radius:999px}
 .dock.mini:not(.open){align-items:center}
 .dock.mini:not(.open) .pet{min-width:0;gap:0}
@@ -128,7 +130,7 @@ kbd{font:600 10.5px/1 Inter,system-ui,sans-serif;background:#F2EFE9;border:1px s
 .skill:hover .num,.skill:focus .num{opacity:1}
 .kb{display:inline-flex;gap:4px;align-items:center;color:#C9C3BE;font-size:11.5px}
 .kb kbd{background:#3A3940;border-color:#56545C;color:#fff}
-.lasso .hint{gap:12px}
+.selecting .hint{gap:12px;white-space:nowrap}
 .shortcuts{width:min(520px,calc(100vw - 32px))}
 .sc{padding:8px 16px 14px;display:flex;flex-direction:column;gap:6px;max-height:62vh;overflow:auto}
 .sc-h{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#5E5B66;margin-top:8px}
@@ -141,9 +143,11 @@ kbd{font:600 10.5px/1 Inter,system-ui,sans-serif;background:#F2EFE9;border:1px s
 .hl{position:fixed;border-radius:8px;background:rgba(58,111,216,.12);outline:2px dashed #3A6FD8;outline-offset:2px;transition:all .06s}
 .hl .tag{position:absolute;left:0;top:-24px;background:#3A6FD8;color:#fff;font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;white-space:nowrap}
 
-/* lasso */
-.lasso{position:fixed;inset:0;cursor:crosshair;background:rgba(27,26,31,.04)}
-.lasso .hint,.pickchip{position:fixed;left:50%;top:16px;transform:translateX(-50%);background:#1B1A1F;color:#fff;padding:8px 14px;border-radius:999px;font-size:12.5px;box-shadow:0 8px 20px rgba(27,26,31,.25);display:flex;gap:10px;align-items:center}
+/* select tool */
+.selecting{position:fixed;inset:0;cursor:default;background:rgba(27,26,31,.03)}
+.selecting .hl{pointer-events:none}
+.marquee{position:fixed;border:1.5px solid #3A6FD8;background:rgba(58,111,216,.12);border-radius:3px;pointer-events:none}
+.selecting .hint,.pickchip{position:fixed;left:50%;top:16px;transform:translateX(-50%);background:#1B1A1F;color:#fff;padding:8px 14px;border-radius:999px;font-size:12.5px;box-shadow:0 8px 20px rgba(27,26,31,.25);display:flex;gap:10px;align-items:center}
 .pickchip button{color:#C9B8FF;font-weight:600}
 svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 
@@ -217,6 +221,31 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 @media (prefers-reduced-motion:reduce){.ld-pet svg,.skel i,.spin,.out.streaming::after,.thinking .head svg{animation:none}}
 [hidden]{display:none!important}
 
+
+/* long answers: expand, scroll, reveal */
+.result{display:flex;flex-direction:column;max-height:calc(100vh - 24vh)}
+.result .out{flex:1;min-height:0;overscroll-behavior:contain}
+.result.big{width:min(1000px,calc(100vw - 32px));top:3vh;max-height:94vh}
+.result.big .out{max-height:none;font-size:14.5px;line-height:1.6;padding:18px 22px}
+.result.big .diff{max-height:none;flex:1}
+.result.big .diff textarea{min-height:40vh}
+.result .head .grow{flex:1;min-width:0}
+.x.expand{margin-left:auto;display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border-radius:8px;color:#5E5B66}
+.x.expand:hover,.x.expand[aria-pressed=true]{background:#F2EFE9;color:#1B1A1F}
+.x.expand + .x{margin-left:0}
+.history.big{width:min(760px,calc(100vw - 32px))}
+.history.big .hout{max-height:none}
+.hh .grow{flex:1}
+.reveal{margin-top:14px;border-top:1px dashed #E3DFD6;padding-top:10px;display:flex;flex-direction:column;gap:8px;white-space:normal}
+.rv-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:#5E5B66}
+.spoilers{display:flex;flex-direction:column;gap:6px}
+.spoiler{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:9px;background:#F2EFE9;border:1px dashed #D9D4C9;white-space:pre-wrap;font-size:13px;line-height:1.45;cursor:pointer;position:relative}
+.spoiler .sp-txt{filter:blur(6px);user-select:none;transition:filter .2s}
+.spoiler:not(.shown)::after{content:"Click to reveal";position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:600;color:#5E5B66;background:#fff;border:1px solid #E3DFD6;border-radius:999px;padding:2px 8px}
+.spoiler.shown{background:#EAF6F0;border-style:solid;border-color:#BFE0D2;cursor:default}
+.spoiler.shown .sp-txt{filter:none;user-select:text}
+.hout .reveal{margin-top:8px}
+
 /* history */
 .history{position:fixed;right:16px;top:16px;bottom:100px;width:min(380px,calc(100vw - 32px));background:#fff;border:1px solid #E3DFD6;border-radius:16px;box-shadow:0 18px 40px rgba(27,26,31,.22);display:flex;flex-direction:column;overflow:hidden;animation:pop .14s ease-out}
 .hh{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #EEEAE2}
@@ -283,15 +312,17 @@ function sticker(skill, size = 22) {
   });
 }
 const ICON = {
+  expand: `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M8.5 1.5h4v4M5.5 12.5h-4v-4M12.5 1.5L8 6M1.5 12.5L6 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  shrink: `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M12.5 5.5h-4v-4M1.5 8.5h4v4M8.5 5.5L13 1M5.5 8.5L1 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   history: `<svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 10a6.5 6.5 0 1 0 2-4.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3 3.5v3h3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 6.5V10l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
-  lasso: `<svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3c4.4 0 7 2 7 4.6S13.9 12 10 12 3 10.2 3 7.6 5.6 3 10 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.5 2.5"/><path d="M6.5 11.2c-.8 1.3-.7 2.8.6 3.6 1.2.8 1.4 2 .6 3.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  select: `<svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/><path d="M9.5 9.5l7.5 3-3.2 1.2-1.3 3.3z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`,
   search: `<svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   plus: `<svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
   lock: `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="5.5" width="7" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`,
   min: `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
 };
 
-// Transient UI (menus, panels, highlight). The dock and the lasso pick persist.
+// Transient UI (menus, panels, highlight). The dock and the current pick persist.
 function clearUI({ keepPick = true } = {}) {
   layer.querySelectorAll(".card,.result,.bar,.scrim,.peek,.hl,.ghost,.history,.tip").forEach((n) => n.remove());
   setOpen("card", false);
@@ -367,11 +398,11 @@ async function captureRect(rect) {
  * build() resolves the full Context (+ a write-back target) only on drop,
  * because screenshots and Figma calls are slow.
  */
-function targetAt(x, y) {
-  // 1) inside the lasso pick
-  if (picked && inRect(x, y, picked.rect)) return { rect: picked.rect, label: "Your lasso pick", build: async () => ({ ctx: picked.ctx, target: picked.target }) };
+function targetAt(x, y, { elementsOnly = false } = {}) {
+  // 1) inside what the select tool picked
+  if (!elementsOnly && picked && inRect(x, y, picked.rect)) return { rect: picked.rect, label: "Your selection", build: async () => ({ ctx: picked.ctx, target: picked.target }) };
   // 2) inside the current text selection
-  const sel = readSelection();
+  const sel = elementsOnly ? null : readSelection();
   if (sel && inRect(x, y, sel.rect, 12)) return { rect: sel.rect, label: "Your selection", build: async () => selectionCtx(sel) };
 
   layer.style.display = "none"; // look through our own UI
@@ -510,7 +541,7 @@ function applyReplace(target, text) {
 
 // ---------------------------------------------------------------- dock (pet squad)
 // Full bar, or minimized to small pets / dots. A minimized bar opens while you
-// hover it, focus it, select text, lasso, have a pick, drag a pet, or use a card.
+// hover it, focus it, select text, use the select tool, have a pick, drag a pet, or use a card.
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const ALT = IS_MAC ? "⌥" : "Alt+";
 let dock = null;
@@ -561,7 +592,7 @@ function renderDock() {
   dock.append(
     el("div", { class: "extras" }, [
       el("div", { class: "sep" }),
-      tool("lasso", "Lasso", () => startLasso(), `Lasso (${ALT}⇧L, or ${ALT}drag)`),
+      tool("select", "Select", () => startSelect(), `Select (${ALT}⇧L, or ${ALT}click / ${ALT}drag)`),
       tool("search", "Search", () => openBar(), `Search skills (${ALT}⇧P)`),
       tool("history", "History", () => openHistory(), `What the pets generated on this site (${ALT}⇧H)`),
       tool("plus", "Adopt", () => chrome.runtime.sendMessage({ type: "open-studio" }), "Open Skill Studio to make a new pet"),
@@ -731,7 +762,7 @@ async function dropPet(pet, t, x, y) {
   }
 }
 
-/** Click (or Enter) on a pet: use the lasso pick, else the selection, else ask to drag. */
+/** Click (or Enter) on a pet: use the select-tool pick, else the text selection, else ask to drag. */
 function usePet(pet, anchor, sel = readSelection()) {
   clearUI();
   let pick = null;
@@ -740,7 +771,7 @@ function usePet(pet, anchor, sel = readSelection()) {
   const x = anchor.left;
   const y = anchor.top - 12;
   if (!pick) {
-    const card = petCard(pet, null, null, "Drag me onto text, an image, a field or a Figma frame, or lasso something first.");
+    const card = petCard(pet, null, null, "Drag me onto text, an image, a field or a Figma frame, or select something first.");
     layer.append(card);
     place(card, x, y - card.offsetHeight);
     return;
@@ -826,81 +857,134 @@ function pickSkill(ctx, target, skill, pet) {
   input.focus();
 }
 
-// ---------------------------------------------------------------- lasso
-// Freehand by default; hold Shift for a box. Start it from the dock, with
-// Alt+Shift+L, or by Alt-dragging anywhere on the page.
-let lassoOn = false;
-function startLasso(startEvent = null) {
-  if (lassoOn) return;
+// ---------------------------------------------------------------- select tool
+// Like a design tool's select: hover highlights the paragraph / image / field /
+// frame under the pointer, click picks it, drag draws a box. Shift adds more
+// (Enter or a plain click finishes). Start from the dock, Alt+Shift+L, or just
+// Alt+click / Alt+drag anywhere.
+let selecting = false;
+let selectCancel = null;
+const SVGNS = "http://www.w3.org/2000/svg";
+function outlineSvg(rects) {
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("class", "pickline");
+  for (const r of rects) {
+    const box = document.createElementNS(SVGNS, "rect");
+    for (const [k, v] of Object.entries({ x: r.left - 3, y: r.top - 3, width: r.width + 6, height: r.height + 6, rx: 8, fill: "rgba(58,111,216,.10)", stroke: "#3A6FD8", "stroke-width": 2, "stroke-dasharray": "6 5" })) box.setAttribute(k, v);
+    svg.append(box);
+  }
+  return svg;
+}
+
+function startSelect(startEvent = null) {
+  if (selecting) return;
   clearUI({ keepPick: false });
   hideTip();
-  lassoOn = true;
-  setOpen("lasso", true);
-  layer.querySelector('[data-tool="lasso"] .ic')?.classList.add("on");
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("class", "pickline");
-  const path = document.createElementNS(svgNS, "path");
-  path.setAttribute("fill", "rgba(58,111,216,.10)");
-  path.setAttribute("stroke", "#3A6FD8");
-  path.setAttribute("stroke-width", "2");
-  path.setAttribute("stroke-dasharray", "6 5");
-  svg.append(path);
-  let pts = [];
+  selecting = true;
+  setOpen("select", true);
+  layer.querySelector('[data-tool="select"] .ic')?.classList.add("on");
+  const picks = []; // {kind:"el", t} | {kind:"box", rect}
   let origin = null;
-  let box = false;
+  let boxing = false;
+  let hover = null;
   const hint = el("div", { class: "hint" }, [
-    "Draw around text, images or frames",
-    el("span", { class: "kb" }, [el("kbd", { text: "⇧" }), " box"]),
+    "Click something, or drag a box",
+    el("span", { class: "kb" }, [el("kbd", { text: "⇧" }), " add more"]),
+    el("span", { class: "kb" }, [el("kbd", { text: "↵" }), " done"]),
     el("span", { class: "kb" }, [el("kbd", { text: "esc" }), " cancel"]),
   ]);
-  const pane = el("div", { class: "lasso" }, [hint]);
-  pane.append(svg);
+  const hl = el("div", { class: "hl" }, [el("span", { class: "tag" })]);
+  hl.hidden = true;
+  const marquee = el("div", { class: "marquee" });
+  marquee.hidden = true;
+  let chosen = outlineSvg([]);
+  const pane = el("div", { class: "selecting" }, [hint]);
+  pane.append(chosen, hl, marquee);
   layer.append(pane);
-  const freehand = () => "M" + pts.map((p) => p.join(",")).join("L") + (pts.length > 2 ? "Z" : "");
-  const boxPts = (x, y) => [[origin[0], origin[1]], [x, origin[1]], [x, y], [origin[0], y]];
+
+  const redrawChosen = () => {
+    const fresh = outlineSvg(picks.map((p) => (p.kind === "box" ? p.rect : p.t.rect)));
+    chosen.replaceWith(fresh);
+    chosen = fresh;
+    hint.firstChild.textContent = picks.length ? `${picks.length} selected` : "Click something, or drag a box";
+  };
+  const showHover = (x, y) => {
+    hover = targetAt(x, y, { elementsOnly: true });
+    hl.hidden = !hover;
+    if (!hover) return;
+    Object.assign(hl.style, { left: `${hover.rect.left}px`, top: `${hover.rect.top}px`, width: `${hover.rect.width}px`, height: `${hover.rect.height}px` });
+    hl.firstChild.textContent = hover.label;
+  };
   const begin = (e) => {
+    e.preventDefault(); // stop Shift-click from stretching the page's own text selection
     pane.setPointerCapture(e.pointerId);
     origin = [e.clientX, e.clientY];
-    pts = [origin];
-    box = e.shiftKey;
+    boxing = false;
   };
+  pane.addEventListener("mousedown", (e) => e.preventDefault());
   pane.addEventListener("pointerdown", begin);
   pane.addEventListener("pointermove", (e) => {
-    if (!origin || !(e.buttons & 1)) return;
-    if (e.shiftKey) box = true;
-    if (box) pts = boxPts(e.clientX, e.clientY);
-    else {
-      const [lx, ly] = pts[pts.length - 1];
-      if (Math.hypot(e.clientX - lx, e.clientY - ly) > 4) pts.push([e.clientX, e.clientY]);
+    if (origin && e.buttons & 1) {
+      if (!boxing && Math.hypot(e.clientX - origin[0], e.clientY - origin[1]) > 6) {
+        boxing = true;
+        hl.hidden = true;
+        marquee.hidden = false;
+      }
+      if (boxing) {
+        const [x0, y0] = origin;
+        Object.assign(marquee.style, { left: `${Math.min(x0, e.clientX)}px`, top: `${Math.min(y0, e.clientY)}px`, width: `${Math.abs(e.clientX - x0)}px`, height: `${Math.abs(e.clientY - y0)}px` });
+      }
+      return;
     }
-    path.setAttribute("d", box ? "M" + pts.map((p) => p.join(",")).join("L") + "Z" : freehand());
+    showHover(e.clientX, e.clientY);
   });
-  pane.addEventListener("pointerup", () => finish());
-  if (startEvent) begin(startEvent); // Alt-drag: the pointer is already down
+  pane.addEventListener("pointerup", (e) => {
+    if (!origin) return;
+    const [x0, y0] = origin;
+    origin = null;
+    marquee.hidden = true;
+    if (boxing) {
+      const rect = new DOMRect(Math.min(x0, e.clientX), Math.min(y0, e.clientY), Math.abs(e.clientX - x0), Math.abs(e.clientY - y0));
+      if (rect.width > 8 && rect.height > 8) picks.push({ kind: "box", rect });
+    } else {
+      const t = targetAt(e.clientX, e.clientY, { elementsOnly: true });
+      if (t) picks.push({ kind: "el", t });
+    }
+    if (e.shiftKey) return redrawChosen(); // keep adding
+    finish();
+  });
+  if (startEvent) {
+    begin(startEvent); // Alt+click / Alt+drag: the pointer is already down
+    showHover(startEvent.clientX, startEvent.clientY);
+  }
 
-  lassoCancel = () => {
+  selectEnter = () => finish();
+  selectCancel = () => {
     pane.remove();
-    endLasso();
+    endSelect();
   };
   async function finish() {
     pane.remove();
-    endLasso();
-    if (pts.length < 3) return;
-    const xs = pts.map((p) => p[0]);
-    const ys = pts.map((p) => p[1]);
-    const rect = new DOMRect(Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-    if (rect.width < 10 || rect.height < 10) return;
-    layer.prepend(svg); // keep the outline as the visible "pick"
-    const chip = el("div", { class: "pickchip", role: "status" }, [spinner(), "Reading your pick…"]);
+    endSelect();
+    if (!picks.length) return;
+    const rects = picks.map((p) => (p.kind === "box" ? p.rect : p.t.rect));
+    const svg = outlineSvg(rects);
+    layer.prepend(svg); // the outlines stay as the visible "pick"
+    const chip = el("div", { class: "pickchip", role: "status" }, [spinner(), "Reading what you selected…"]);
     layer.append(chip);
     setOpen("pick", true);
     try {
-      const ctx = await lassoCtx(pts, rect);
-      picked = { polygon: pts.slice(), rect, ctx, target: null, svg, chip };
+      const parts = await Promise.all(
+        picks.map((p) => (p.kind === "box" ? regionCtx(boxPolygon(p.rect), p.rect).then((ctx) => ({ ctx, target: null })) : p.t.build())),
+      );
+      const { ctx, target } = mergePicks(parts);
+      const union = new DOMRect(Math.min(...rects.map((r) => r.left)), Math.min(...rects.map((r) => r.top)), 0, 0);
+      const right = Math.max(...rects.map((r) => r.right));
+      const bottom = Math.max(...rects.map((r) => r.bottom));
+      picked = { rect: new DOMRect(union.x, union.y, right - union.x, bottom - union.y), ctx, target, svg, chip };
       const n = Math.min(lib.pets.length, 9);
       chip.replaceChildren(
-        el("span", { text: `Picked: ${ctx.label}.` }),
+        el("span", { text: `Selected: ${ctx.label}.` }),
         el("span", { class: "kb" }, [el("kbd", { text: n > 1 ? `1–${n}` : "1" }), " pick a pet"]),
         el("span", { class: "kb" }, ["or drag one here"]),
         el("button", { text: "Clear", onclick: () => clearPick() }),
@@ -915,12 +999,27 @@ function startLasso(startEvent = null) {
     }
   }
 }
-let lassoCancel = null;
-function endLasso() {
-  lassoOn = false;
-  lassoCancel = null;
-  setOpen("lasso", false);
-  layer.querySelector('[data-tool="lasso"] .ic')?.classList.remove("on");
+let selectEnter = null;
+const boxPolygon = (r) => [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]];
+
+/** Combine several picks. One pick keeps its write-back target (so a selected field can be rewritten). */
+function mergePicks(parts) {
+  if (parts.length === 1) return parts[0];
+  const ctx = baseCtx();
+  ctx.text = parts.map((p) => p.ctx.text).filter(Boolean).join("\n\n").slice(0, 50000);
+  ctx.images = parts.flatMap((p) => p.ctx.images || []).slice(0, 5);
+  ctx.kinds = [...new Set(parts.flatMap((p) => p.ctx.kinds).filter((k) => k !== "editable"))];
+  ctx.figma = parts.find((p) => p.ctx.figma)?.ctx.figma || null;
+  ctx.label = `${parts.length} items · ${describeContext(ctx)}`;
+  return { ctx, target: null };
+}
+
+function endSelect() {
+  selecting = false;
+  selectCancel = null;
+  selectEnter = null;
+  setOpen("select", false);
+  layer.querySelector('[data-tool="select"] .ic')?.classList.remove("on");
 }
 function clearPick() {
   picked?.svg.remove();
@@ -929,14 +1028,14 @@ function clearPick() {
   setOpen("pick", false);
 }
 
-// Alt-drag anywhere on the page = lasso, no button needed.
+// Alt+click / Alt+drag anywhere on the page = select, no button needed.
 document.addEventListener(
   "pointerdown",
   (e) => {
-    if (!e.altKey || e.button !== 0 || e.composedPath().includes(host) || lassoOn) return;
+    if (!e.altKey || e.button !== 0 || e.composedPath().includes(host) || selecting) return;
     e.preventDefault();
     e.stopPropagation();
-    startLasso(e);
+    startSelect(e);
   },
   true,
 );
@@ -959,11 +1058,12 @@ function openShortcuts() {
     el("div", { class: "result shortcuts", role: "dialog", "aria-label": "Keyboard shortcuts" }, [
       el("div", { class: "head" }, [el("span", { class: "display", style: { fontSize: "18px" }, text: "Shortcuts" }), el("button", { class: "x", "aria-label": "Close", text: "×", onclick: () => clearUI() })]),
       el("div", { class: "sc" }, [
-        el("div", { class: "sc-h", text: "Picking" }),
-        row([`${ALT}⇧L`], "Lasso: draw around anything"),
-        row([`${ALT}drag`], "Lasso straight away, anywhere on the page"),
-        row(["⇧"], "While lassoing: draw a box instead"),
-        row(["esc"], "Cancel the lasso / clear the pick / close"),
+        el("div", { class: "sc-h", text: "Selecting" }),
+        row([`${ALT}⇧L`], "Select tool: click things or drag a box"),
+        row([`${ALT}click`], "Select the thing under the pointer, straight away"),
+        row([`${ALT}drag`], "Select everything in a box, straight away"),
+        row(["⇧ click"], "While selecting: add more things · ↵ to finish"),
+        row(["esc"], "Cancel selecting / clear the selection / close"),
         el("div", { class: "sc-h", text: "Pets" }),
         row([`${ALT}1`, "…", `${ALT}9`], "Use pet 1–9 on your pick or selection (works while typing)"),
         row(["1", "…", "9"], "Same, when you have a pick or a selection and aren't typing"),
@@ -998,19 +1098,24 @@ document.addEventListener(
     }
     if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey) {
       // In-page fallbacks for when Chrome didn't assign the extension shortcut.
-      const act = { KeyL: () => startLasso(), KeyP: () => openBar(), KeyH: () => openHistory() }[e.code];
+      const act = { KeyL: () => startSelect(), KeyP: () => openBar(), KeyH: () => openHistory() }[e.code];
       if (act) {
         e.preventDefault();
         e.stopPropagation();
         return act();
       }
     }
+    if (selecting && e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      return selectEnter?.();
+    }
     if (e.altKey && e.code === "Slash") {
       e.preventDefault();
       return openShortcuts();
     }
     // Bare 1..9 → pet n, only when there's something picked and you're not typing.
-    if (digit && !e.altKey && !e.ctrlKey && !e.metaKey && !inOurUI && !typingIn(active) && !layer.querySelector(".card,.result,.bar,.history,.lasso") && (picked || readSelection())) {
+    if (digit && !e.altKey && !e.ctrlKey && !e.metaKey && !inOurUI && !typingIn(active) && !layer.querySelector(".card,.result,.bar,.history,.selecting") && (picked || readSelection())) {
       e.preventDefault();
       e.stopPropagation();
       return petByNumber(Number(digit));
@@ -1019,8 +1124,8 @@ document.addEventListener(
   true,
 );
 
-/** Text whose lines sit inside the lasso, plus a screenshot when there are images or a canvas. */
-async function lassoCtx(poly, rect) {
+/** Text inside a box (or polygon), plus a screenshot when there are images or a canvas. */
+async function regionCtx(poly, rect) {
   const ctx = baseCtx();
   const pieces = [];
   let lastBlock = null;
@@ -1033,7 +1138,7 @@ async function lassoCtx(poly, rect) {
     range.selectNodeContents(n);
     const b = range.getBoundingClientRect();
     if (b.bottom < rect.top || b.top > rect.bottom || b.right < rect.left || b.left > rect.right) continue;
-    // Word by word, so a lasso around half a line takes just those words.
+    // Word by word, so a box over half a line takes just those words.
     const words = [];
     const re = /\S+/g;
     for (let m; (m = re.exec(n.nodeValue)) && wordBudget-- > 0; ) {
@@ -1203,7 +1308,8 @@ function run(ctx, target, opts) {
   const panel = el("div", { class: "result thinking", role: "dialog", "aria-label": label }, [
     el("div", { class: "head" }, [
       el("span", { html: petSvg(pet?.color || "#FFB86B", 30) }),
-      el("span", {}, [el("div", { text: label }), el("div", { class: "sub", text: `${pet ? pet.name + " · " : ""}${ctx.label}` })]),
+      el("span", { class: "grow" }, [el("div", { text: label }), el("div", { class: "sub", text: `${pet ? pet.name + " · " : ""}${ctx.label}` })]),
+      expandButton(() => panel),
       el("button", { class: "x", "aria-label": "Close", text: "×", onclick: () => clearUI() }),
     ]),
     load,
@@ -1243,11 +1349,14 @@ function run(ctx, target, opts) {
       text += m.text;
       if (proposing) proposal.value = text;
       else {
-        out.textContent = text;
-        out.scrollTop = out.scrollHeight;
+        // Follow the text only if you haven't scrolled up to read.
+        const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+        renderAnswer(out, text, false);
+        if (atBottom) out.scrollTop = out.scrollHeight;
       }
     } else if (m.type === "done") {
       if (load.isConnected) load.replaceWith(body);
+      if (!proposing) renderAnswer(out, text, true);
       finish(true);
       if (approve) {
         approve.hidden = false;
@@ -1300,6 +1409,37 @@ function run(ctx, target, opts) {
 
 const spinner = () => el("span", { class: "spin", "aria-hidden": "true" });
 
+
+// ---------------------------------------------------------------- long answers
+/** Expand/shrink a panel to see more text. */
+function expandButton(getPanel) {
+  const b = el("button", { class: "x expand", "aria-label": "Expand to see more", "aria-pressed": "false", title: "Expand", html: ICON.expand });
+  b.addEventListener("click", () => {
+    const big = getPanel().classList.toggle("big");
+    b.setAttribute("aria-pressed", String(big));
+    b.setAttribute("aria-label", big ? "Shrink" : "Expand to see more");
+    b.title = big ? "Shrink" : "Expand";
+    b.innerHTML = big ? ICON.shrink : ICON.expand;
+  });
+  return b;
+}
+
+// Scroll our panels ourselves: canvas apps (Figma, Google Docs) swallow wheel
+// events at the window, which would leave long answers unscrollable.
+layer.addEventListener(
+  "wheel",
+  (e) => {
+    const path = e.composedPath();
+    const scroller = path.find((n) => n instanceof Element && layer.contains(n) && n.scrollHeight > n.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(n).overflowY));
+    const panel = path.find((n) => n instanceof Element && n.matches?.(".result,.history,.card,.bar"));
+    if (!scroller && !panel) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (scroller) scroller.scrollTop += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * scroller.clientHeight : e.deltaY;
+  },
+  { passive: false },
+);
+
 // ---------------------------------------------------------------- history panel
 // Everything generated on this site (or everywhere), newest first, live.
 let historyScope = "site";
@@ -1312,7 +1452,8 @@ function openHistory() {
   );
   const panel = el("div", { class: "history", role: "dialog", "aria-label": "History" }, [
     el("div", { class: "hh" }, [
-      el("span", { class: "display", style: { fontSize: "18px" }, text: "History" }),
+      el("span", { class: "display grow", style: { fontSize: "18px" }, text: "History" }),
+      expandButton(() => panel),
       el("button", { class: "x", "aria-label": "Close history", text: "×", onclick: () => clearUI() }),
     ]),
     el("div", { class: "hctl" }, [el("div", { class: "segs", role: "group", "aria-label": "Which history" }, scopeBtns), search]),
@@ -1345,7 +1486,9 @@ function historyItem(e) {
   const skill = e.skillId ? lib.skills.find((s) => s.id === e.skillId) : null;
   const st = e.sticker || skill?.sticker;
   const text = e.final || e.output || e.error;
-  const body = el("div", { class: "hout" + (e.status === "error" ? " err" : ""), text: text || (e.status === "running" ? "" : "(no text)") });
+  const body = el("div", { class: "hout" + (e.status === "error" ? " err" : "") });
+  if (text && e.status !== "error") renderAnswer(body, text, e.status !== "running");
+  else body.textContent = text || (e.status === "running" ? "" : "(no text)");
   const more = el("button", { class: "link", text: "Show more", onclick: () => { body.classList.toggle("open"); more.textContent = body.classList.contains("open") ? "Show less" : "Show more"; } });
   return el("article", { class: "hitem" }, [
     el("div", { class: "hrow" }, [
@@ -1368,7 +1511,7 @@ function historyItem(e) {
 // ---------------------------------------------------------------- peek (kept)
 let peekTimer = 0;
 function showPeek() {
-  if (layer.querySelector(".bar,.result,.card,.lasso") || drag) return;
+  if (layer.querySelector(".bar,.result,.card,.selecting") || drag) return;
   const sel = readSelection();
   if (!sel || sel.text.trim().length < PEEK_MIN_CHARS) return;
   const { ctx, target } = selectionCtx(sel);
@@ -1405,7 +1548,7 @@ document.addEventListener(
   "keydown",
   (e) => {
     if (e.key !== "Escape") return;
-    if (lassoOn) lassoCancel?.();
+    if (selecting) selectCancel?.();
     else if (layer.querySelector(".card,.result,.bar,.peek,.history")) clearUI();
     else if (picked) clearPick();
   },
@@ -1422,7 +1565,7 @@ document.addEventListener(
 // ---------------------------------------------------------------- hotkeys
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "summon") openBar();
-  if (msg.type === "lasso") startLasso();
+  if (msg.type === "lasso" || msg.type === "select") startSelect();
   if (msg.type === "history") openHistory();
   if (msg.type === "toggle-squad") chrome.storage.local.set({ squadVisible: !prefs.squadVisible });
   if (msg.type === "rerun-last") {

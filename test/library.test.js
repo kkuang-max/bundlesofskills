@@ -89,3 +89,24 @@ test("lasso hit-testing", () => {
   assert.equal(pointInPolygon([5, 5], sq), true);
   assert.equal(pointInPolygon([15, 5], sq), false);
 });
+
+test("reveal-later answers are split off, even mid-stream", async () => {
+  const { splitReveal } = await import("../src/library.js");
+  const out = "1. What is a cat?\n2. Where do cats sleep?\n\n=== ANSWERS ===\n1. A small mammal.\n   Usually a pet.\n2. Anywhere warm.";
+  const r = splitReveal(out);
+  assert.equal(r.hasReveal, true);
+  assert.equal(r.shown, "1. What is a cat?\n2. Where do cats sleep?");
+  assert.deepEqual(r.answers, ["1. A small mammal.\nUsually a pet.", "2. Anywhere warm."]);
+  assert.equal(splitReveal("1. Q?\n=== ANSWERS ===\n1. A").answers.length, 1); // partial
+  assert.equal(splitReveal("just text").hasReveal, false);
+  assert.equal(splitReveal("Q?\n## Answers\n1. A").hasReveal, true);
+});
+
+test("old quiz/flashcard templates are upgraded, edited ones are kept", () => {
+  const old = defaultLibrary();
+  old.skills.find((s) => s.id === "quiz").prompt = "Write 3 short quiz questions that test understanding of this content, then the answers under a 'Answers' heading.";
+  old.skills.find((s) => s.id === "flashcards").prompt = "My own flashcards prompt";
+  const n = normalizeLibrary(old);
+  assert.match(n.skills.find((s) => s.id === "quiz").prompt, /=== ANSWERS ===/);
+  assert.equal(n.skills.find((s) => s.id === "flashcards").prompt, "My own flashcards prompt");
+});

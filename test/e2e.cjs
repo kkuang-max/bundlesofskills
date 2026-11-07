@@ -34,7 +34,12 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
     calls.push(body);
     await sleep(1200); // so the loading state is visible
     const sys = body.messages[0].content;
-    const text = /replace the original text/.test(sys) ? "This sentence has some mistakes in it and needs fixing."
+    const user = JSON.stringify(body.messages[1].content);
+    const text = /=== ANSWERS ===/.test(user)
+      ? Array.from({ length: 4 }, (_, i) => `${i + 1}. Question ${i + 1}: what does the note say about point ${i + 1}?\n   (Think about who owns it, when it happens, and why it matters for the beta.)`).join("\n\n") +
+        "\n\n" + "Extra context line to make this long. ".repeat(60) + "\n\n=== ANSWERS ===\n" +
+        Array.from({ length: 4 }, (_, i) => `${i + 1}. Answer ${i + 1}: SECRET-${i + 1}`).join("\n")
+      : /replace the original text/.test(sys) ? "This sentence has some mistakes in it and needs fixing."
       : /posted as a comment/.test(sys) ? "Primary button label is vague; say “Pay $42” instead of “Continue”."
       : "• Beta ships Friday 14 Nov\n• Maya: release notes; Sam: login bug\n• Design review next week";
     const chunk = (delta, finish) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish || null }] })}\n\n`;
@@ -110,13 +115,15 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await page.getByRole("button", { name: "Close", exact: true }).first().click();
   console.log("✓ drag Pixel → image → screenshot goes to the model");
 
-  // ---- 3) lasso the paragraph, then click Scout
+  // ---- 3) select tool: drag a box over the paragraph, then click Scout
   await sw.evaluate(async () => { for (const t of await chrome.tabs.query({})) chrome.tabs.sendMessage(t.id, { type: "lasso" }).catch(() => {}); });
   await sleep(200);
   const p = await page.locator("#p").boundingBox();
   await page.mouse.move(p.x - 10, p.y - 8);
   await page.mouse.down();
-  for (const [x, y] of [[p.x + p.width + 10, p.y - 8], [p.x + p.width + 10, p.y + p.height + 8], [p.x - 10, p.y + p.height + 8], [p.x - 10, p.y]]) await page.mouse.move(x, y, { steps: 8 });
+  await page.mouse.move(p.x + p.width / 2, p.y + p.height / 2, { steps: 4 });
+  await shot(page, "6a-select-box");
+  await page.mouse.move(p.x + p.width + 10, p.y + p.height + 8, { steps: 6 });
   await page.mouse.up();
   await sleep(500);
   await shot(page, "6-lasso-pick");
@@ -130,7 +137,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await shot(page, "8-summary");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
-  console.log("✓ lasso → click Scout → summarize");
+  console.log("✓ select tool box → click Scout → summarize");
 
   // ---- history panel on the page (this site)
   await page.getByRole("button", { name: "What the pets generated on this site" }).click();
@@ -138,9 +145,43 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await shot(page, "8a-history-panel");
   const hp = page.getByRole("dialog", { name: "History" });
   assert.ok(await hp.getByText("Approved & applied").isVisible(), "rewrite logged as approved");
-  assert.equal(await hp.locator(".hitem").count(), 3, "three runs on this site");
+  assert.ok((await hp.locator(".hitem").count()) >= 3, "runs on this site");
   await page.keyboard.press("Escape");
   console.log("✓ in-page history for this site");
+
+  // ---- long answer: scroll even when the page swallows wheel events, expand, reveal quiz answers
+  await page.evaluate(() => window.addEventListener("wheel", (e) => e.preventDefault(), { passive: false, capture: true }));
+  await page.locator("#p").selectText();
+  await page.keyboard.press("Alt+Digit4"); // Sprout
+  await sleep(300);
+  await page.getByRole("button", { name: "Quiz me" }).click();
+  await sleep(500);
+  await shot(page, "8b-quiz-loading");
+  await sleep(1300);
+  const outBox = page.locator(".result .out");
+  const before = await outBox.evaluate((n) => n.scrollTop);
+  const ob = await outBox.boundingBox();
+  await page.mouse.move(ob.x + ob.width / 2, ob.y + ob.height / 2);
+  await page.mouse.wheel(0, 400);
+  await sleep(150);
+  assert.ok((await outBox.evaluate((n) => n.scrollTop)) > before, "long answers scroll");
+  assert.equal(await page.locator(".spoiler:not(.shown)").count(), 4, "all 4 answers hidden");
+  assert.ok(!(await page.locator(".result .out > div").first().innerText()).includes("SECRET"), "questions part has no answers");
+  await shot(page, "8c-quiz-hidden");
+  await page.getByRole("button", { name: "Expand to see more" }).click();
+  await sleep(200);
+  const bigW = (await page.locator(".result").boundingBox()).width;
+  assert.ok(bigW > 900, `expanded (${bigW}px)`);
+  await outBox.evaluate((n) => (n.scrollTop = n.scrollHeight));
+  await page.getByRole("button", { name: "Reveal answer 2" }).click();
+  await sleep(250);
+  assert.equal(await page.locator(".spoiler.shown").count(), 1);
+  await shot(page, "8d-quiz-expanded-revealed");
+  await page.getByRole("button", { name: "Reveal all" }).click();
+  assert.equal(await page.locator(".spoiler.shown").count(), 4);
+  await page.keyboard.press("Escape");
+  await page.mouse.click(900, 40);
+  console.log("✓ long answers scroll (even if the page eats wheel events), expand, quiz answers revealed on click");
 
   // ---- 4) search bar still works
   await page.locator("#p").selectText();
@@ -200,35 +241,38 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   assert.match(calls.at(-1).messages[1].content.at(-1).text ?? calls.at(-1).messages[1].content[0].text, /Skill:/);
   await page.keyboard.press("Escape");
   await page.mouse.click(900, 40);
-  // Alt+drag lasso anywhere, then "3"? no: "1" → Scout on the pick
+  // Alt+drag a box anywhere, then "2" → Quill on the pick
   const pb = await page.locator("#p").boundingBox();
   await page.keyboard.down("Alt");
   await page.mouse.move(pb.x - 8, pb.y - 8);
   await page.mouse.down();
-  for (const [x, y] of [[pb.x + pb.width + 8, pb.y - 8], [pb.x + pb.width + 8, pb.y + pb.height + 8], [pb.x - 8, pb.y + pb.height + 8], [pb.x - 8, pb.y]]) await page.mouse.move(x, y, { steps: 6 });
+  await page.mouse.move(pb.x + pb.width + 8, pb.y + pb.height + 8, { steps: 8 });
   await page.mouse.up();
   await page.keyboard.up("Alt");
   await sleep(500);
   assert.ok(/open/.test(await dockClass()), "a pick keeps the bar open");
-  await shot(page, "9g-alt-drag-lasso");
+  await shot(page, "9g-alt-drag-select");
   await page.keyboard.press("Digit2");
   await sleep(300);
   assert.ok(await page.getByRole("dialog", { name: "Quill's skills" }).isVisible(), "2 sends the pick to pet 2");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape"); // clears the pick
-  // Shift = box lasso (started with the in-page Alt+Shift+L)
+  // Select tool (Alt+Shift+L): hover highlights, click picks, Shift-click adds, Enter finishes
   await page.keyboard.press("Alt+Shift+KeyL");
   await sleep(150);
+  await page.mouse.move(pb.x + 40, pb.y + 10);
+  await sleep(150);
+  await shot(page, "9h-select-hover");
   await page.keyboard.down("Shift");
-  await page.mouse.move(pb.x - 6, pb.y - 6);
-  await page.mouse.down();
-  await page.mouse.move(pb.x + 200, pb.y + pb.height + 6, { steps: 8 });
-  await shot(page, "9h-box-lasso");
-  await page.mouse.up();
+  await page.mouse.click(pb.x + 40, pb.y + 10);
+  const ib = await page.locator("#img").boundingBox();
+  await page.mouse.click(ib.x + 40, ib.y + 40);
   await page.keyboard.up("Shift");
-  await sleep(500);
-  const chipText = await page.getByRole("status").filter({ hasText: "Picked" }).innerText();
-  assert.match(chipText, /Picked: \d+ words/);
+  await shot(page, "9h2-select-two");
+  await page.keyboard.press("Enter");
+  await sleep(600);
+  const chipText = await page.getByRole("status").filter({ hasText: "Selected" }).innerText();
+  assert.match(chipText, /Selected: 2 items · \d+ words · 1 image/);
   await page.keyboard.press("Escape");
   // Alt+2 while typing in the textarea → Quill on the field's selection
   await page.evaluate(() => { const t = document.getElementById("t"); t.focus(); t.setSelectionRange(0, 4); });

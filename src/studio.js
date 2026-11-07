@@ -11,6 +11,7 @@ import {
   safeColor,
 } from "./library.js";
 import { STATUS_LABEL, filterHistory, mutateHistory } from "./history.js";
+import { renderAnswer } from "./answer-view.js";
 
 const APPS = { docs: "Google Docs", sheets: "Sheets", slides: "Slides", figma: "Figma", wiki: "Wikis", mail: "Mail", code: "Code sites", web: "Any web page" };
 const $ = (id) => document.getElementById(id);
@@ -359,10 +360,11 @@ $("tRun").addEventListener("click", () => {
       if (!got) out.replaceChildren();
       out.classList.remove("loading");
       got += m.text;
-      out.textContent = got;
+      renderAnswer(out, got, false);
     }
     if (m.type === "done") {
       stopLoading();
+      renderAnswer(out, got, true);
       out.append(el("div", { class: "muted", style: { fontSize: "11px", marginTop: "8px" }, text: "Saved to History" }));
     }
     if (m.type === "stopped") {
@@ -435,10 +437,16 @@ function historyCard(e) {
         el("div", { class: "hlbl", text: e.final && e.final !== e.output ? "Applied (edited before approving)" : e.status === "posted" ? "Posted comment" : e.status === "approved" ? "Applied" : "Generated" }),
         e.status === "running" && !result
           ? el("div", { class: "hbox" }, [el("div", { class: "skel" }, [el("i"), el("i"), el("i")])])
-          : el("div", { class: "hbox" + (e.status === "error" ? " err" : ""), text: result || e.error || "(no text)" }),
+          : (() => {
+              const box = el("div", { class: "hbox out-box" + (e.status === "error" ? " err" : "") });
+              if (result && e.status !== "error") renderAnswer(box, result, true);
+              else box.textContent = result || e.error || "(no text)";
+              return box;
+            })(),
       ]),
     ]),
     el("div", { class: "hact" }, [
+      el("button", { class: "btn small", type: "button", text: "Expand", "aria-pressed": "false", onclick: (ev) => { const big = ev.target.closest(".hitem").classList.toggle("big"); ev.target.textContent = big ? "Shrink" : "Expand"; ev.target.setAttribute("aria-pressed", String(big)); } }),
       result ? el("button", { class: "btn small", type: "button", text: "Copy", onclick: async (ev) => { await navigator.clipboard.writeText(result); ev.target.textContent = "Copied"; } }) : null,
       el("button", { class: "btn small danger", type: "button", text: "Delete", onclick: () => mutateHistory((h) => h.filter((x) => x.id !== e.id)) }),
     ]),
