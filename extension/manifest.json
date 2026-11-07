@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Skill Pet (MVP)",
+  "version": "0.1.0",
+  "description": "A small companion that runs Claude skills on whatever you select.",
+  "permissions": ["storage", "contextMenus", "activeTab", "clipboardWrite"],
+  "host_permissions": ["https://api.anthropic.com/*"],
+  "background": { "service_worker": "dist/background.js" },
+  "content_scripts": [
+    { "matches": ["<all_urls>"], "js": ["dist/content.js"], "run_at": "document_idle", "all_frames": false }
+  ],
+  "options_page": "options.html",
+  "commands": {
+    "summon": {
+      "suggested_key": { "default": "Alt+Shift+P", "mac": "Alt+Shift+P" },
+      "description": "Summon the pet (command bar)"
+    },
+    "rerun-last": {
+      "suggested_key": { "default": "Alt+Shift+R", "mac": "Alt+Shift+R" },
+      "description": "Rerun the last skill on the current selection"
+    }
+  }
+}
