@@ -27,6 +27,7 @@ import {
 } from "./library.js";
 import { STATUS_LABEL, filterHistory, timeAgo } from "./history.js";
 import { renderAnswer } from "./answer-view.js";
+import { MARKDOWN_CSS, copyRich } from "./markdown.js";
 
 const PEEK_MIN_CHARS = 12;
 const PEEK_TIMEOUT_MS = 4000;
@@ -215,12 +216,12 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 .skel i:nth-child(1){width:92%}.skel i:nth-child(2){width:78%}.skel i:nth-child(3){width:86%}.skel i:nth-child(4){width:54%}
 .skel.small{padding:0 2px}.skel.small i{height:8px}
 @keyframes shimmer{from{background-position:100% 0}to{background-position:-200% 0}}
-.out.streaming::after{content:"";display:inline-block;width:7px;height:15px;margin-left:2px;vertical-align:-2px;background:#1B1A1F;border-radius:1px;animation:blink 1s steps(2) infinite}
+.out.streaming>:last-child::after{content:"";display:inline-block;width:7px;height:15px;margin-left:2px;vertical-align:-2px;background:#1B1A1F;border-radius:1px;animation:blink 1s steps(2) infinite}
 @keyframes blink{50%{opacity:0}}
 .spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:rot .7s linear infinite;vertical-align:-2px;opacity:.7}
 @keyframes rot{to{transform:rotate(360deg)}}
 .card.sniffing .ctx{display:flex;align-items:center;gap:6px}
-@media (prefers-reduced-motion:reduce){.ld-pet svg,.skel i,.spin,.out.streaming::after,.thinking .head svg{animation:none}}
+@media (prefers-reduced-motion:reduce){.ld-pet svg,.skel i,.spin,.out.streaming>:last-child::after,.thinking .head svg{animation:none}}
 [hidden]{display:none!important}
 
 
@@ -241,7 +242,7 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 .reveal{margin-top:14px;border-top:1px dashed #E3DFD6;padding-top:10px;display:flex;flex-direction:column;gap:8px;white-space:normal}
 .rv-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:#5E5B66}
 .spoilers{display:flex;flex-direction:column;gap:6px}
-.spoiler{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:9px;background:#F2EFE9;border:1px dashed #D9D4C9;white-space:pre-wrap;font-size:13px;line-height:1.45;cursor:pointer;position:relative}
+.spoiler{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:9px;background:#F2EFE9;border:1px dashed #D9D4C9;white-space:normal;font-size:13px;line-height:1.45;cursor:pointer;position:relative}
 .spoiler .sp-txt{filter:blur(6px);user-select:none;transition:filter .2s}
 .spoiler:not(.shown)::after{content:"Click to reveal";position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:600;color:#5E5B66;background:#fff;border:1px solid #E3DFD6;border-radius:999px;padding:2px 8px}
 .spoiler.shown{background:#EAF6F0;border-style:solid;border-color:#BFE0D2;cursor:default}
@@ -285,7 +286,7 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 const host = document.createElement("skill-pet-root");
 // Closed so page scripts can't read results; the e2e build opens it so Playwright can see in.
 const shadow = host.attachShadow({ mode: typeof __SHADOW_MODE__ === "string" ? __SHADOW_MODE__ : "closed" });
-shadow.innerHTML = `${FONT}<style>${CSS}</style><div class="layer"></div>`;
+shadow.innerHTML = `${FONT}<style>${CSS}${MARKDOWN_CSS}</style><div class="layer"></div>`;
 const layer = shadow.querySelector(".layer");
 document.documentElement.appendChild(host);
 
@@ -1441,7 +1442,9 @@ function run(ctx, target, opts) {
     }
   });
   copy.addEventListener("click", async () => {
-    await navigator.clipboard.writeText((proposing ? proposal.value : text).trim());
+    // Answers copy as rich text (formatted when pasted into Docs/Gmail); proposals as plain text.
+    if (proposing) await navigator.clipboard.writeText(proposal.value.trim());
+    else await copyRich(text.trim());
     copy.textContent = "Copied";
   });
   approve?.addEventListener("click", async () => {
@@ -1565,7 +1568,7 @@ function historyItem(e) {
     ]),
     e.status === "running" && !text ? el("div", { class: "skel small", "aria-hidden": "true" }, [el("i"), el("i")]) : body,
     el("div", { class: "hact" }, [
-      text && e.status !== "error" ? el("button", { class: "link", text: "Copy", onclick: async (ev) => { await navigator.clipboard.writeText(text); ev.target.textContent = "Copied"; } }) : null,
+      text && e.status !== "error" ? el("button", { class: "link", text: "Copy", onclick: async (ev) => { await copyRich(text); ev.target.textContent = "Copied"; } }) : null,
       text && text.length > 220 ? more : null,
       historyScope === "all" && e.url && e.url !== location.href ? el("a", { class: "link", href: e.url, target: "_blank", rel: "noopener", text: e.host }) : null,
     ]),

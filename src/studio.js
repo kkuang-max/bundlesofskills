@@ -15,6 +15,9 @@ import {
 } from "./library.js";
 import { STATUS_LABEL, filterHistory, mutateHistory } from "./history.js";
 import { renderAnswer } from "./answer-view.js";
+import { MARKDOWN_CSS, copyRich } from "./markdown.js";
+
+document.head.append(Object.assign(document.createElement("style"), { textContent: MARKDOWN_CSS }));
 
 const APPS = { docs: "Google Docs", sheets: "Sheets", slides: "Slides", figma: "Figma", wiki: "Wikis", mail: "Mail", code: "Code sites", web: "Any web page" };
 const $ = (id) => document.getElementById(id);
@@ -471,7 +474,7 @@ function historyCard(e) {
     ]),
     el("div", { class: "hact" }, [
       el("button", { class: "btn small", type: "button", text: "Expand", "aria-pressed": "false", onclick: (ev) => { const big = ev.target.closest(".hitem").classList.toggle("big"); ev.target.textContent = big ? "Shrink" : "Expand"; ev.target.setAttribute("aria-pressed", String(big)); } }),
-      result ? el("button", { class: "btn small", type: "button", text: "Copy", onclick: async (ev) => { await navigator.clipboard.writeText(result); ev.target.textContent = "Copied"; } }) : null,
+      result ? el("button", { class: "btn small", type: "button", text: "Copy", onclick: async (ev) => { await copyRich(result); ev.target.textContent = "Copied"; } }) : null,
       el("button", { class: "btn small danger", type: "button", text: "Delete", onclick: () => mutateHistory((h) => h.filter((x) => x.id !== e.id)) }),
     ]),
   ]);

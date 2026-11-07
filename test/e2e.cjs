@@ -41,7 +41,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
         Array.from({ length: 4 }, (_, i) => `${i + 1}. Answer ${i + 1}: SECRET-${i + 1}`).join("\n")
       : /replace the original text/.test(sys) ? "This sentence has some mistakes in it and needs fixing."
       : /posted as a comment/.test(sys) ? "Primary button label is vague; say “Pay $42” instead of “Continue”."
-      : "• Beta ships Friday 14 Nov\n• Maya: release notes; Sam: login bug\n• Design review next week";
+      : "## Summary\n- **Beta** ships *Friday 14 Nov*\n- Maya: release notes; Sam: `login` bug\n\n| Who | What |\n|---|---|\n| Maya | notes |\n\n- [ ] Design review next week";
     const chunk = (delta, finish) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish || null }] })}\n\n`;
     await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: ": OPENROUTER PROCESSING\n\n" + chunk({ content: text.slice(0, 15) }) + chunk({ content: text.slice(15) }) + chunk({}, "stop") + "data: [DONE]\n\n" });
   });
@@ -135,6 +135,14 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   const lassoCall = calls.at(-1);
   assert.match(lassoCall.messages[1].content[0].text, /Maya owns the release notes/);
   await shot(page, "8-summary");
+  // Markdown is rendered as real elements, never as raw syntax
+  const md = page.locator(".result .out");
+  assert.equal(await md.locator("h2").innerText(), "Summary");
+  assert.equal(await md.locator("strong").first().innerText(), "Beta");
+  assert.equal(await md.locator("table td").first().innerText(), "Maya");
+  assert.equal(await md.locator('li.task input[type="checkbox"]').count(), 1);
+  assert.ok(!(await md.innerText()).includes("**"), "no raw markdown");
+  console.log("✓ answers render as Markdown (headings, bold, lists, table, checklist)");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   console.log("✓ select tool box → click Scout → summarize");

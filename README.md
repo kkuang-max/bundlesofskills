@@ -53,6 +53,10 @@ Each pet is one of seven characters: **cat, dog, bird, frog, bunny, bear, ghost*
 | **Esc** | Cancel selecting / clear the selection / close |
 | **Alt+Shift+P / H / S / R** | Search · History · show/hide squad · rerun last |
 
+### Markdown answers
+
+Answers render as formatted Markdown: headings, **bold**, *italic*, `code`, code blocks, bullet and numbered lists (nested), checklists, quotes, tables and links. The renderer builds page elements directly, so model text is never inserted as HTML, and links only work if they're http(s) or mailto. The prompt asks for Markdown when it helps scanning; rewrites and Figma comments stay plain text, because they go straight into your document. **Copy** puts rich text on the clipboard, so pasting into Docs or Gmail keeps the formatting, and plain-text apps get the Markdown.
+
 ### The selection is pinned to the page
 
 What you pick with **Select** isn't a floating overlay. Each part is attached to the element it came from (a box is attached to that spot in the document). Its outline scrolls with the page and follows layout changes, and you can still drop a pet on it after scrolling. While the Select tool is open, the scroll wheel still scrolls the page, or the inner scroller under your pointer. The tool's full-screen layer only exists while you're picking; once you finish, the page is fully clickable again and only the outline stays.
@@ -131,7 +135,7 @@ npm test
 npm run e2e
 ```
 
-`npm test` has 20 unit tests covering matching, permissions, Figma URL parsing, request building, history and the OpenRouter client. `npm run e2e` loads the real extension in Chromium with OpenRouter and the Figma API **faked**, then checks:
+`npm test` has 26 unit tests covering matching, permissions, Figma URL parsing, request building, history and the OpenRouter client. `npm run e2e` loads the real extension in Chromium with OpenRouter and the Figma API **faked**, then checks:
 - drag Quill onto a field → approve a rewrite (and that nothing changes before approval)
 - drag Pixel onto an image → a screenshot is sent
 - box-select a paragraph → click Scout → summarize
@@ -140,6 +144,7 @@ npm run e2e
 - Studio: drag a skill onto a pet, create a new skill and assign it
 - minimize to small pets / dots, expand on hover, selection and Select, hover cards, Alt+1 / 1–9 / Alt-drag box select / click + Shift-click select / Alt+/;
 - the selection stays pinned to the paragraph when scrolling and is still a drop target; the page scrolls under the Select tool;
+- answers render as Markdown (heading, bold, table, checklist), no raw syntax;
 - characters: species per pet, switching one in the Studio updates the dock live;
 - a long quiz answer scrolls even when the page swallows wheel events, the panel expands, and answers stay hidden until clicked;
 - the loading screen appears while generating; history logs approved / posted / Studio-test runs; the in-page History panel and the Studio History tab

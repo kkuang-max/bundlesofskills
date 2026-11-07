@@ -1,5 +1,6 @@
 // Shared answer view (pages + Studio). Plain DOM, no framework.
 import { splitReveal } from "./library.js";
+import { renderMarkdown } from "./markdown.js";
 
 function el(tag, attrs = {}, children = []) {
   const n = document.createElement(tag);
@@ -22,13 +23,16 @@ function el(tag, attrs = {}, children = []) {
 export function renderAnswer(box, text, done) {
   const { shown, answers, hasReveal } = splitReveal(text);
   box.classList.toggle("streaming", !done && !hasReveal);
+  box.classList.add("md");
   if (!hasReveal) {
-    box.textContent = text;
+    box.replaceChildren(renderMarkdown(text));
     return;
   }
   const n = answers.length;
   const list = el("div", { class: "spoilers" }, answers.map((a, i) => {
-    const b = el("button", { class: "spoiler", "aria-expanded": "false", "aria-label": `Reveal answer ${i + 1}` }, [el("span", { class: "sp-txt", text: a })]);
+    const txt = el("span", { class: "sp-txt md" });
+    txt.append(renderMarkdown(a));
+    const b = el("button", { class: "spoiler", "aria-expanded": "false", "aria-label": `Reveal answer ${i + 1}` }, [txt]);
     b.addEventListener("click", () => {
       b.classList.add("shown");
       b.setAttribute("aria-expanded", "true");
@@ -37,8 +41,10 @@ export function renderAnswer(box, text, done) {
     return b;
   }));
   const all = el("button", { class: "link", text: "Reveal all", onclick: () => list.querySelectorAll(".spoiler").forEach((b) => b.click()) });
+  const shownBox = el("div");
+  shownBox.append(renderMarkdown(shown));
   box.replaceChildren(
-    el("div", { text: shown }),
+    shownBox,
     el("div", { class: "reveal" }, [
       el("div", { class: "rv-head" }, [
         el("span", { text: done ? `${n} answer${n === 1 ? "" : "s"} hidden. Click one to reveal it.` : "Answers are hidden until you're ready…" }),
