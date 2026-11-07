@@ -24,6 +24,7 @@ import {
   skillsFor,
   suggestPet,
 } from "./library.js";
+import { STATUS_LABEL, filterHistory, timeAgo } from "./history.js";
 
 const PEEK_MIN_CHARS = 12;
 const PEEK_TIMEOUT_MS = 4000;
@@ -144,6 +145,54 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 .thinking .head svg{animation:bob .6s ease-in-out infinite alternate}
 @keyframes bob{to{transform:translateY(-3px)}}
 
+/* loading */
+.loading{padding:16px 14px 18px;display:flex;flex-direction:column;gap:14px}
+.ld-top{display:flex;align-items:center;gap:12px}
+.ld-pet svg{animation:hop .55s ease-in-out infinite alternate;transform-origin:50% 100%}
+@keyframes hop{from{transform:translateY(0) rotate(-4deg)}to{transform:translateY(-6px) rotate(4deg)}}
+.ld-title{font-weight:600;font-size:14px}
+.ld-sub{font-size:12px;color:#5E5B66}
+.ld-time{margin-left:auto;font-variant-numeric:tabular-nums;font-size:12px;color:#5E5B66;background:#F2EFE9;border-radius:999px;padding:3px 9px}
+.skel{display:flex;flex-direction:column;gap:9px}
+.skel i{display:block;height:10px;border-radius:5px;background:linear-gradient(90deg,#EFEBE3 0%,#F8F6F1 40%,#EFEBE3 80%);background-size:300% 100%;animation:shimmer 1.2s linear infinite}
+.skel i:nth-child(1){width:92%}.skel i:nth-child(2){width:78%}.skel i:nth-child(3){width:86%}.skel i:nth-child(4){width:54%}
+.skel.small{padding:0 2px}.skel.small i{height:8px}
+@keyframes shimmer{from{background-position:100% 0}to{background-position:-200% 0}}
+.out.streaming::after{content:"";display:inline-block;width:7px;height:15px;margin-left:2px;vertical-align:-2px;background:#1B1A1F;border-radius:1px;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:rot .7s linear infinite;vertical-align:-2px;opacity:.7}
+@keyframes rot{to{transform:rotate(360deg)}}
+.card.sniffing .ctx{display:flex;align-items:center;gap:6px}
+@media (prefers-reduced-motion:reduce){.ld-pet svg,.skel i,.spin,.out.streaming::after,.thinking .head svg{animation:none}}
+[hidden]{display:none!important}
+
+/* history */
+.history{position:fixed;right:16px;top:16px;bottom:100px;width:min(380px,calc(100vw - 32px));background:#fff;border:1px solid #E3DFD6;border-radius:16px;box-shadow:0 18px 40px rgba(27,26,31,.22);display:flex;flex-direction:column;overflow:hidden;animation:pop .14s ease-out}
+.hh{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #EEEAE2}
+.hh .x{font-size:18px;line-height:1;padding:4px 8px;border-radius:8px;color:#5E5B66}
+.hctl{display:flex;flex-direction:column;gap:8px;padding:10px 14px;border-bottom:1px solid #EEEAE2}
+.hctl input{border:1px solid #E3DFD6;border-radius:8px;padding:7px 9px;font-size:12.5px;color:#1B1A1F;background:#fff}
+.segs{display:flex;background:#F2EFE9;border-radius:9px;padding:2px}
+.seg{flex:1;padding:5px 8px;border-radius:7px;font-size:12px;color:#5E5B66;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg[aria-pressed=true]{background:#fff;color:#1B1A1F;font-weight:600;box-shadow:0 1px 3px rgba(27,26,31,.12)}
+.hlist{flex:1;overflow:auto;padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+.hlist .none{font-size:12.5px;color:#5E5B66;padding:24px 8px;text-align:center}
+.hitem{border:1px solid #EEEAE2;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:7px}
+.hrow{display:flex;align-items:center;gap:9px}
+.hmeta{flex:1;min-width:0}
+.hname{font-weight:600;font-size:13px}
+.hsub{font-size:11px;color:#5E5B66;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hstat{font-size:10.5px;font-weight:600;padding:3px 7px;border-radius:999px;background:#F2EFE9;color:#5E5B66;white-space:nowrap;display:inline-flex;gap:5px;align-items:center}
+.hstat.s-done{background:#EAF2FD;color:#234A99}
+.hstat.s-approved,.hstat.s-posted{background:#E3F3EC;color:#1E6B4F}
+.hstat.s-error{background:#FCEDEA;color:#9B2C1A}
+.hstat.s-running{background:#FFF0E6;color:#8A4B12}
+.hout{font-size:12.5px;line-height:1.45;white-space:pre-wrap;max-height:4.4em;overflow:hidden;color:#1B1A1F}
+.hout.open{max-height:none}
+.hout.err{color:#9B2C1A}
+.hact{display:flex;gap:12px}
+.hfoot{padding:9px 14px;border-top:1px solid #EEEAE2;background:#FBFAF7}
+
 /* peek */
 .peek{position:fixed;display:flex;align-items:center;gap:4px;padding:4px;background:#1B1A1F;border-radius:12px;box-shadow:0 10px 22px rgba(27,26,31,.25);animation:pop .14s ease-out}
 .peek .pb{display:flex;align-items:center;gap:6px;color:#fff;padding:5px 9px 5px 5px;border-radius:8px;font-size:12px;white-space:nowrap}
@@ -183,6 +232,7 @@ function sticker(skill, size = 22) {
   });
 }
 const ICON = {
+  history: `<svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 10a6.5 6.5 0 1 0 2-4.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3 3.5v3h3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 6.5V10l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   lasso: `<svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3c4.4 0 7 2 7 4.6S13.9 12 10 12 3 10.2 3 7.6 5.6 3 10 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.5 2.5"/><path d="M6.5 11.2c-.8 1.3-.7 2.8.6 3.6 1.2.8 1.4 2 .6 3.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   search: `<svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   plus: `<svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
@@ -192,7 +242,9 @@ const ICON = {
 
 // Transient UI (menus, panels, highlight). The dock and the lasso pick persist.
 function clearUI({ keepPick = true } = {}) {
-  layer.querySelectorAll(".card,.result,.bar,.scrim,.peek,.hl,.ghost").forEach((n) => n.remove());
+  layer.querySelectorAll(".card,.result,.bar,.scrim,.peek,.hl,.ghost,.history").forEach((n) => n.remove());
+  clearInterval(tickTimer);
+  historyRender = null;
   clearTimeout(peekTimer);
   activePort?.disconnect();
   activePort = null;
@@ -432,6 +484,7 @@ function renderDock() {
       el("div", { class: "sep" }),
       tool("lasso", "Lasso", () => startLasso()),
       tool("search", "Search", () => openBar()),
+      tool("history", "History", () => openHistory(), "What the pets generated on this site"),
       tool("plus", "Adopt", () => chrome.runtime.sendMessage({ type: "open-studio" }), "Open Skill Studio to make a new pet"),
     );
   }
@@ -497,7 +550,9 @@ function showHighlight(t) {
 }
 
 async function dropPet(pet, t, x, y) {
-  const card = petCard(pet, null, null, "Sniffing…");
+  const card = petCard(pet, null, null, `Sniffing ${t.label.toLowerCase()}…`);
+  card.classList.add("sniffing");
+  card.querySelector(".ctx").prepend(spinner(), " ");
   layer.append(card);
   place(card, x + 16, y - 20);
   try {
@@ -625,7 +680,7 @@ function startLasso() {
     if (rect.width < 10 || rect.height < 10) return;
     svg.setAttribute("class", "pickline");
     layer.prepend(svg); // keep the outline as the visible "pick"
-    const chip = el("div", { class: "pickchip", role: "status", text: "Reading your pick…" });
+    const chip = el("div", { class: "pickchip", role: "status" }, [spinner(), "Reading your pick…"]);
     layer.append(chip);
     try {
       const ctx = await lassoCtx(pts, rect);
@@ -759,6 +814,22 @@ function openBar() {
 
 // ---------------------------------------------------------------- run + approve
 let activePort = null;
+let tickTimer = 0;
+
+/** The loading state shown until the first words arrive. */
+function loader(pet, ctx, verb) {
+  const n = (ctx.images || []).length;
+  const what = [ctx.text ? `${ctx.text.trim().split(/\s+/).length} words` : "", n ? `${n} image${n > 1 ? "s" : ""}` : ""].filter(Boolean).join(" + ") || "your request";
+  return el("div", { class: "loading", role: "status", "aria-live": "polite" }, [
+    el("div", { class: "ld-top" }, [
+      el("span", { class: "ld-pet", html: petSvg(pet?.color || "#FFB86B", 40, true) }),
+      el("div", {}, [el("div", { class: "ld-title", text: `${pet ? pet.name : "The pet"} is ${verb}…` }), el("div", { class: "ld-sub", text: `Sending ${what} to the model` })]),
+      el("span", { class: "ld-time", text: "0s" }),
+    ]),
+    el("div", { class: "skel", "aria-hidden": "true" }, [el("i"), el("i"), el("i"), el("i")]),
+  ]);
+}
+
 function run(ctx, target, opts) {
   clearUI();
   const skill = opts.skillId ? lib.skills.find((s) => s.id === opts.skillId) : null;
@@ -772,8 +843,10 @@ function run(ctx, target, opts) {
   const canReplace = action === "replace" && Boolean(target);
   const canComment = action === "comment" && Boolean(ctx.figma?.fileKey);
   const proposing = canReplace || canComment;
+  let historyId = null;
+  const logStatus = (status, final) => historyId && chrome.runtime.sendMessage({ type: "history-update", id: historyId, status, final }).catch(() => {});
 
-  const out = el("div", { class: "out", "aria-live": "polite" });
+  const out = el("div", { class: "out streaming", "aria-live": "polite" });
   const proposal = el("textarea", { "aria-label": "Proposed text (you can edit it before approving)", readonly: true });
   const body = proposing
     ? el("div", { class: "diff" }, [
@@ -783,14 +856,25 @@ function run(ctx, target, opts) {
         proposal,
       ])
     : out;
+  const load = loader(pet, ctx, action === "replace" ? "rewriting" : action === "comment" ? "drafting a comment" : "thinking");
 
   const status = el("span", { class: "note", role: "status" });
-  const approve = proposing ? el("button", { class: "ok", text: canReplace ? "Approve & replace" : "Approve & post comment", disabled: true }) : null;
-  const copy = el("button", { class: proposing ? "" : "primary", text: "Copy", disabled: true });
-  const again = el("button", { text: "Run again", onclick: () => run(ctx, target, opts) });
-  const discard = el("button", { text: proposing ? "Discard" : "Close", onclick: () => clearUI() });
+  const approve = proposing ? el("button", { class: "ok", text: canReplace ? "Approve & replace" : "Approve & post comment", hidden: true }) : null;
+  const copy = el("button", { class: proposing ? "" : "primary", text: "Copy", hidden: true });
+  const again = el("button", { text: "Run again", hidden: true, onclick: () => run(ctx, target, opts) });
+  const stop = el("button", { text: "Stop", onclick: () => port.postMessage({ type: "stop" }) });
+  const discard = el("button", {
+    text: proposing ? "Discard" : "Close",
+    hidden: true,
+    onclick: () => {
+      if (proposing) logStatus("discarded");
+      clearUI();
+    },
+  });
+  const historyBtn = el("button", { class: "link", text: "History", onclick: () => openHistory() });
   if (action === "replace" && !target) status.textContent = "This spot can't be edited directly. Copy and paste it.";
   if (action === "comment" && !ctx.figma) status.textContent = "Comments post to Figma frames. Here you can copy it.";
+  const note = status.textContent;
 
   const panel = el("div", { class: "result thinking", role: "dialog", "aria-label": label }, [
     el("div", { class: "head" }, [
@@ -798,16 +882,40 @@ function run(ctx, target, opts) {
       el("span", {}, [el("div", { text: label }), el("div", { class: "sub", text: `${pet ? pet.name + " · " : ""}${ctx.label}` })]),
       el("button", { class: "x", "aria-label": "Close", text: "×", onclick: () => clearUI() }),
     ]),
-    body,
-    el("div", { class: "actions" }, [approve, copy, again, discard, status]),
+    load,
+    el("div", { class: "actions" }, [approve, copy, again, stop, discard, status]),
   ]);
   layer.append(el("div", { class: "scrim", onclick: () => clearUI() }), panel);
+
+  // Elapsed timer while generating.
+  const t0 = Date.now();
+  clearInterval(tickTimer);
+  const tick = () => {
+    const sec = Math.round((Date.now() - t0) / 1000);
+    const t = load.querySelector(".ld-time");
+    if (t) t.textContent = `${sec}s`;
+    if (!load.isConnected) status.textContent = `Generating… ${sec}s`;
+  };
+  tickTimer = setInterval(tick, 500);
+
+  const finish = (ok) => {
+    clearInterval(tickTimer);
+    panel.classList.remove("thinking");
+    out.classList.remove("streaming");
+    stop.remove();
+    again.hidden = false;
+    discard.hidden = false;
+    if (ok) copy.hidden = false;
+    status.replaceChildren(document.createTextNode(note ? note + " " : ok ? "Saved to " : "Logged in "), historyBtn);
+  };
 
   let text = "";
   const port = chrome.runtime.connect({ name: "run-skill" });
   activePort = port;
   port.onMessage.addListener((m) => {
-    if (m.type === "delta") {
+    if (m.type === "started") historyId = m.historyId;
+    else if (m.type === "delta") {
+      if (load.isConnected) load.replaceWith(body); // first words: swap the loader for the text
       text += m.text;
       if (proposing) proposal.value = text;
       else {
@@ -815,18 +923,23 @@ function run(ctx, target, opts) {
         out.scrollTop = out.scrollHeight;
       }
     } else if (m.type === "done") {
-      panel.classList.remove("thinking");
-      copy.removeAttribute("disabled");
+      if (load.isConnected) load.replaceWith(body);
+      finish(true);
       if (approve) {
-        approve.removeAttribute("disabled");
+        approve.hidden = false;
         proposal.removeAttribute("readonly");
         proposal.value = text.trim();
+        proposal.focus();
       }
+    } else if (m.type === "stopped") {
+      if (load.isConnected) load.replaceWith(el("div", { class: "out muted", text: "Stopped before any text came back." }));
+      finish(Boolean(text));
+      approve?.remove();
     } else if (m.type === "error") {
-      panel.classList.remove("thinking");
       const err = el("div", { class: "out err", text: m.message });
       if (m.code === "no-key") err.append(" ", el("button", { class: "link", text: "Open options", onclick: () => chrome.runtime.sendMessage({ type: "open-options" }) }));
-      body.replaceWith(err);
+      (load.isConnected ? load : body).replaceWith(err);
+      finish(false);
       approve?.remove();
     }
   });
@@ -839,6 +952,7 @@ function run(ctx, target, opts) {
     approve.disabled = true;
     if (canReplace) {
       if (applyReplace(target, final)) {
+        logStatus("approved", final);
         clearUI({ keepPick: false });
       } else {
         status.textContent = "Couldn't write here. Use Copy.";
@@ -846,17 +960,85 @@ function run(ctx, target, opts) {
       }
       return;
     }
-    status.textContent = "Posting…";
+    status.replaceChildren(spinner(), " Posting to Figma…");
     const r = await chrome.runtime.sendMessage({ type: "figma-comment", fileKey: ctx.figma.fileKey, nodeId: ctx.figma.nodeId, message: final });
     if (r?.error) {
       status.textContent = r.error;
       approve.disabled = false;
     } else {
+      logStatus("posted", final);
       status.textContent = "Comment posted to Figma ✓";
       approve.textContent = "Posted";
     }
   });
-  port.postMessage({ context: ctx, skillId: opts.skillId, petId: opts.petId, instruction: opts.instruction, request: opts.request });
+  port.postMessage({ source: "page", context: ctx, skillId: opts.skillId, petId: opts.petId, instruction: opts.instruction, request: opts.request });
+}
+
+const spinner = () => el("span", { class: "spin", "aria-hidden": "true" });
+
+// ---------------------------------------------------------------- history panel
+// Everything generated on this site (or everywhere), newest first, live.
+let historyScope = "site";
+function openHistory() {
+  clearUI();
+  const search = el("input", { type: "search", "aria-label": "Search history", placeholder: "Search history…" });
+  const list = el("div", { class: "hlist" });
+  const scopeBtns = ["site", "all"].map((k) =>
+    el("button", { class: "seg", "aria-pressed": String(historyScope === k), text: k === "site" ? location.hostname.replace(/^www\./, "") : "Everywhere", onclick: () => ((historyScope = k), scopeBtns.forEach((b, i) => b.setAttribute("aria-pressed", String(["site", "all"][i] === k))), render()) }),
+  );
+  const panel = el("div", { class: "history", role: "dialog", "aria-label": "History" }, [
+    el("div", { class: "hh" }, [
+      el("span", { class: "display", style: { fontSize: "18px" }, text: "History" }),
+      el("button", { class: "x", "aria-label": "Close history", text: "×", onclick: () => clearUI() }),
+    ]),
+    el("div", { class: "hctl" }, [el("div", { class: "segs", role: "group", "aria-label": "Which history" }, scopeBtns), search]),
+    list,
+    el("div", { class: "hfoot" }, [el("button", { class: "link", text: "Open full history in Studio", onclick: () => chrome.runtime.sendMessage({ type: "open-studio", hash: "history" }) })]),
+  ]);
+  search.addEventListener("keydown", (e) => e.stopPropagation());
+  search.addEventListener("input", () => render());
+  async function render() {
+    if (!panel.isConnected) return;
+    const { history = [] } = await chrome.storage.local.get("history");
+    const items = filterHistory(history, { host: historyScope === "site" ? location.hostname : "", query: search.value }).slice(0, 100);
+    list.replaceChildren(
+      ...(items.length
+        ? items.map(historyItem)
+        : [el("div", { class: "none", text: historyScope === "site" ? "Nothing generated on this site yet. Drag a pet onto something." : "Nothing generated yet." })]),
+    );
+  }
+  historyRender = render;
+  layer.append(panel);
+  render();
+  search.focus();
+}
+let historyRender = null;
+chrome.storage.onChanged.addListener((ch) => {
+  if (ch.history && historyRender) historyRender();
+});
+
+function historyItem(e) {
+  const skill = e.skillId ? lib.skills.find((s) => s.id === e.skillId) : null;
+  const st = e.sticker || skill?.sticker;
+  const text = e.final || e.output || e.error;
+  const body = el("div", { class: "hout" + (e.status === "error" ? " err" : ""), text: text || (e.status === "running" ? "" : "(no text)") });
+  const more = el("button", { class: "link", text: "Show more", onclick: () => { body.classList.toggle("open"); more.textContent = body.classList.contains("open") ? "Show less" : "Show more"; } });
+  return el("article", { class: "hitem" }, [
+    el("div", { class: "hrow" }, [
+      st ? sticker({ sticker: st }, 26) : el("span", { html: petSvg(e.petColor || "#FFB86B", 26) }),
+      el("div", { class: "hmeta" }, [
+        el("div", { class: "hname", text: e.skillName }),
+        el("div", { class: "hsub", text: [e.petName, e.source === "studio" ? "Studio test" : e.picked, timeAgo(e.at)].filter(Boolean).join(" · ") }),
+      ]),
+      el("span", { class: `hstat s-${e.status}` }, [e.status === "running" ? spinner() : null, STATUS_LABEL[e.status] || e.status]),
+    ]),
+    e.status === "running" && !text ? el("div", { class: "skel small", "aria-hidden": "true" }, [el("i"), el("i")]) : body,
+    el("div", { class: "hact" }, [
+      text && e.status !== "error" ? el("button", { class: "link", text: "Copy", onclick: async (ev) => { await navigator.clipboard.writeText(text); ev.target.textContent = "Copied"; } }) : null,
+      text && text.length > 220 ? more : null,
+      historyScope === "all" && e.url && e.url !== location.href ? el("a", { class: "link", href: e.url, target: "_blank", rel: "noopener", text: e.host }) : null,
+    ]),
+  ]);
 }
 
 // ---------------------------------------------------------------- peek (kept)
@@ -903,7 +1085,7 @@ document.addEventListener(
       layer.querySelector(".lasso")?.remove();
       lassoOn = false;
       layer.querySelector('[data-tool="lasso"] .ic')?.classList.remove("on");
-    } else if (layer.querySelector(".card,.result,.bar,.peek")) clearUI();
+    } else if (layer.querySelector(".card,.result,.bar,.peek,.history")) clearUI();
     else if (picked) clearPick();
   },
   true,

@@ -93,6 +93,42 @@
   .try .out.err{color:#9B2C1A}
   .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:999px;font-size:13px;box-shadow:0 10px 24px rgba(27,26,31,.25)}
   .sr{position:absolute;left:-9999px}
+  [hidden]{display:none!important}
+  .tabs{max-width:1280px;margin:8px auto 0;padding:0 24px;display:flex;gap:4px;border-bottom:1px solid var(--line)}
+  .tabs button{border:0;background:none;padding:10px 14px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink)}
+  .tabs .count{font-size:11px;background:#E9E5DC;border-radius:999px;padding:1px 7px;margin-left:4px;color:var(--muted)}
+  main.hist{display:block}
+  .hfilters{display:grid;grid-template-columns:auto 200px 1fr;gap:10px;align-items:start}
+  @media (max-width:800px){.hfilters{grid-template-columns:1fr}}
+  .hfilters select{padding:8px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff}
+  .hlist{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+  .hitem{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fff;display:flex;flex-direction:column;gap:10px}
+  .hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .hmeta{flex:1;min-width:200px}
+  .hname{font-weight:600}
+  .hsub{font-size:12px;color:var(--muted)}
+  .hsub a{color:var(--muted)}
+  .hstat{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;background:#F2EFE9;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
+  .hstat.s-done{background:#EAF2FD;color:#234A99}
+  .hstat.s-approved,.hstat.s-posted{background:#E3F3EC;color:var(--ok)}
+  .hstat.s-error{background:#FCEDEA;color:#9B2C1A}
+  .hstat.s-running{background:#FFF0E6;color:#8A4B12}
+  .hcols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:12px}
+  @media (max-width:800px){.hcols{grid-template-columns:1fr}}
+  .hbox{background:#FBFAF7;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;font-size:13px;white-space:pre-wrap;max-height:220px;overflow:auto}
+  .hbox.err{color:#9B2C1A}
+  .hlbl{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px}
+  .hact{display:flex;gap:8px}
+  .empty-h{color:var(--muted);text-align:center;padding:40px 10px}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:rot .7s linear infinite;vertical-align:-2px}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  .try .out.loading{color:var(--muted);display:flex;gap:8px;align-items:center}
+  .skel{display:flex;flex-direction:column;gap:7px;width:100%}
+  .skel i{display:block;height:9px;border-radius:5px;background:linear-gradient(90deg,#EFEBE3 0%,#F8F6F1 40%,#EFEBE3 80%);background-size:300% 100%;animation:shimmer 1.2s linear infinite}
+  .skel i:nth-child(2){width:80%}.skel i:nth-child(3){width:60%}
+  @keyframes shimmer{from{background-position:100% 0}to{background-position:-200% 0}}
+  @media (prefers-reduced-motion:reduce){.spin,.skel i{animation:none}}
 </style>
 </head>
 <body>
@@ -108,7 +144,11 @@
     <a class="btn" href="options.html">Settings &amp; keys</a>
   </div>
 </header>
-<main>
+<nav class="tabs" role="tablist" aria-label="Studio">
+  <button role="tab" id="tabBuild" aria-controls="viewBuild" aria-selected="true" type="button">Skills &amp; pets</button>
+  <button role="tab" id="tabHistory" aria-controls="viewHistory" aria-selected="false" type="button">History <span class="count" id="histCount"></span></button>
+</nav>
+<main id="viewBuild" role="tabpanel" aria-labelledby="tabBuild">
   <section class="panel" aria-labelledby="libH">
     <div class="ph"><h2 id="libH">Skills</h2><span class="muted grow" id="libCount"></span><button class="btn primary small" id="newSkill" type="button">+ New skill</button></div>
     <label class="sr" for="q">Search skills</label>
@@ -119,6 +159,17 @@
   <section class="panel" aria-labelledby="sqH">
     <div class="ph"><h2 id="sqH">Pet squad</h2><span class="muted grow">Each pet is a group of skills. Permissions live with the pet.</span></div>
     <div class="squad" id="squad"></div>
+  </section>
+</main>
+<main id="viewHistory" class="hist" role="tabpanel" aria-labelledby="tabHistory" hidden>
+  <section class="panel">
+    <div class="ph"><h2>History</h2><span class="muted grow">Everything the pets generated, on pages and in Try it. Newest first.</span><button class="btn small danger" id="hClear" type="button">Clear history</button></div>
+    <div class="hfilters">
+      <div class="filters" id="hSource" role="group" aria-label="Where it was generated"></div>
+      <label class="sr" for="hSite">Site</label><select id="hSite"></select>
+      <label class="sr" for="hq">Search history</label><input class="search" id="hq" type="search" placeholder="Search history…">
+    </div>
+    <div id="hList" class="hlist"></div>
   </section>
 </main>
 
@@ -145,6 +196,7 @@
           <label class="btn small" for="tImg">Add image</label><input class="sr" type="file" id="tImg" accept="image/*">
           <span class="muted" id="tImgName" style="font-size:12px"></span>
           <span style="flex:1"></span>
+          <button class="btn small" type="button" id="tStop" hidden>Stop</button>
           <button class="btn small" type="button" id="tRun">Run</button>
         </div>
         <div class="out" id="tOut" aria-live="polite"></div>

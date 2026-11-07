@@ -10,6 +10,7 @@ import {
   petSvg,
   safeColor,
 } from "./library.js";
+import { STATUS_LABEL, filterHistory, mutateHistory } from "./history.js";
 
 const APPS = { docs: "Google Docs", sheets: "Sheets", slides: "Slides", figma: "Figma", wiki: "Wikis", mail: "Mail", code: "Code sites", web: "Any web page" };
 const $ = (id) => document.getElementById(id);
@@ -321,6 +322,12 @@ $("tImg").addEventListener("change", () => {
   r.readAsDataURL(f);
 });
 let tryPort = null;
+function tryLoading(on) {
+  $("tRun").disabled = on;
+  $("tRun").textContent = on ? "Running…" : "Run";
+  $("tStop").hidden = !on;
+}
+$("tStop").addEventListener("click", () => tryPort?.postMessage({ type: "stop" }));
 $("tRun").addEventListener("click", () => {
   const skill = readForm();
   const text = $("tText").value.trim();
@@ -329,24 +336,136 @@ $("tRun").addEventListener("click", () => {
   let request = "";
   if (/\{\{request\}\}/.test(skill.prompt)) request = prompt("How should it change?") || "";
   const out = $("tOut");
-  out.textContent = "";
   out.classList.remove("err");
+  out.classList.add("loading");
+  const t0 = Date.now();
+  const label = el("span", { text: "Generating… 0s" });
+  out.replaceChildren(el("div", { style: { display: "flex", flexDirection: "column", gap: "10px", width: "100%" } }, [
+    el("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, [el("span", { class: "spin", "aria-hidden": "true" }), label]),
+    el("div", { class: "skel", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]),
+  ]));
+  const timer = setInterval(() => (label.textContent = `Generating… ${Math.round((Date.now() - t0) / 1000)}s`), 500);
+  let got = "";
+  const stopLoading = () => {
+    clearInterval(timer);
+    out.classList.remove("loading");
+    tryLoading(false);
+  };
+  tryLoading(true);
   tryPort?.disconnect();
   tryPort = chrome.runtime.connect({ name: "run-skill" });
   tryPort.onMessage.addListener((m) => {
-    if (m.type === "delta") out.textContent += m.text;
+    if (m.type === "delta") {
+      if (!got) out.replaceChildren();
+      out.classList.remove("loading");
+      got += m.text;
+      out.textContent = got;
+    }
+    if (m.type === "done") {
+      stopLoading();
+      out.append(el("div", { class: "muted", style: { fontSize: "11px", marginTop: "8px" }, text: "Saved to History" }));
+    }
+    if (m.type === "stopped") {
+      stopLoading();
+      if (!got) out.textContent = "Stopped.";
+    }
     if (m.type === "error") {
+      stopLoading();
       out.classList.add("err");
       out.textContent = m.message;
     }
   });
   const kinds = [...(text ? ["text", "editable"] : []), ...(tryImage ? ["image", "frame"] : [])];
   tryPort.postMessage({
+    source: "studio",
     skill,
     request,
     context: { host: "skill-studio", url: "", title: "Skill Studio test", app: "web", kinds, text, images: tryImage ? [tryImage] : [], figma: null, label: "Test input" },
   });
 });
+
+// ---------------------------------------------------------------- history
+let hSource = "";
+let historyCache = [];
+async function loadHistory() {
+  const { history = [] } = await chrome.storage.local.get("history");
+  historyCache = history;
+  renderHistory();
+}
+function renderHistory() {
+  $("histCount").textContent = historyCache.length ? String(historyCache.length) : "";
+  if ($("viewHistory").hidden) return;
+  $("hSource").replaceChildren(
+    ...[["", "All"], ["page", "From pages"], ["studio", "Studio tests"]].map(([k, l]) =>
+      el("button", { class: "chip", type: "button", "aria-pressed": String(hSource === k), text: l, onclick: () => ((hSource = k), renderHistory()) }),
+    ),
+  );
+  const hosts = [...new Set(historyCache.filter((e) => e.source === "page").map((e) => e.host))].sort();
+  const cur = $("hSite").value;
+  $("hSite").replaceChildren(el("option", { value: "", text: "All sites" }), ...hosts.map((h) => el("option", { value: h, text: h, selected: h === cur })));
+  const items = filterHistory(historyCache, { source: hSource, host: $("hSite").value, query: $("hq").value });
+  $("hList").replaceChildren(
+    ...(items.length ? items.map(historyCard) : [el("p", { class: "empty-h", text: historyCache.length ? "Nothing matches." : "Nothing generated yet. Drag a pet onto something on a page, or use Try it on a skill." })]),
+  );
+}
+function historyCard(e) {
+  const skill = e.skillId ? lib.skills.find((s) => s.id === e.skillId) : null;
+  const st = e.sticker || skill?.sticker;
+  const result = e.final || e.output;
+  const when = new Date(e.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return el("article", { class: "hitem" }, [
+    el("div", { class: "hrow" }, [
+      st ? sticker(st, 34) : el("span", { html: petSvg(e.petColor || "#FFB86B", 34) }),
+      el("div", { class: "hmeta" }, [
+        el("div", { class: "hname", text: e.skillName + (e.request ? ` — “${e.request}”` : "") }),
+        el("div", { class: "hsub" }, [
+          [e.petName, when, e.ms ? `${(e.ms / 1000).toFixed(1)}s` : ""].filter(Boolean).join(" · "),
+          e.source === "studio" ? " · Studio test" : " · ",
+          e.source === "page" && e.url ? el("a", { href: e.url, target: "_blank", rel: "noopener", text: e.title || e.host }) : null,
+        ]),
+      ]),
+      el("span", { class: `hstat s-${e.status}` }, [e.status === "running" ? el("span", { class: "spin", "aria-hidden": "true" }) : null, STATUS_LABEL[e.status] || e.status]),
+    ]),
+    el("div", { class: "hcols" }, [
+      el("div", {}, [
+        el("div", { class: "hlbl", text: `What it read${e.picked ? " · " + e.picked : ""}` }),
+        el("div", { class: "hbox", text: e.input || (e.images ? `(${e.images} image${e.images > 1 ? "s" : ""})` : "(nothing)") }),
+      ]),
+      el("div", {}, [
+        el("div", { class: "hlbl", text: e.final && e.final !== e.output ? "Applied (edited before approving)" : e.status === "posted" ? "Posted comment" : e.status === "approved" ? "Applied" : "Generated" }),
+        e.status === "running" && !result
+          ? el("div", { class: "hbox" }, [el("div", { class: "skel" }, [el("i"), el("i"), el("i")])])
+          : el("div", { class: "hbox" + (e.status === "error" ? " err" : ""), text: result || e.error || "(no text)" }),
+      ]),
+    ]),
+    el("div", { class: "hact" }, [
+      result ? el("button", { class: "btn small", type: "button", text: "Copy", onclick: async (ev) => { await navigator.clipboard.writeText(result); ev.target.textContent = "Copied"; } }) : null,
+      el("button", { class: "btn small danger", type: "button", text: "Delete", onclick: () => mutateHistory((h) => h.filter((x) => x.id !== e.id)) }),
+    ]),
+  ]);
+}
+$("hq").addEventListener("input", renderHistory);
+$("hSite").addEventListener("change", renderHistory);
+$("hClear").addEventListener("click", () => confirm("Clear all history?") && mutateHistory(() => []));
+chrome.storage.onChanged.addListener((ch) => {
+  if (ch.history) {
+    historyCache = ch.history.newValue || [];
+    renderHistory();
+  }
+});
+
+function showTab(which) {
+  const hist = which === "history";
+  $("viewBuild").hidden = hist;
+  $("viewHistory").hidden = !hist;
+  $("tabBuild").setAttribute("aria-selected", String(!hist));
+  $("tabHistory").setAttribute("aria-selected", String(hist));
+  if (location.hash !== (hist ? "#history" : "")) history.replaceState(null, "", hist ? "#history" : location.pathname);
+  renderHistory();
+}
+$("tabBuild").addEventListener("click", () => showTab("build"));
+$("tabHistory").addEventListener("click", () => showTab("history"));
+window.addEventListener("hashchange", () => showTab(location.hash === "#history" ? "history" : "build"));
 
 // ---------------------------------------------------------------- import / export
 $("export").addEventListener("click", () => {
@@ -375,3 +494,4 @@ $("q").addEventListener("input", renderLibrary);
 $("newSkill").addEventListener("click", () => openEditor(null));
 $("logo").innerHTML = petSvg("#FFB86B", 30);
 load();
+loadHistory().then(() => showTab(location.hash === "#history" ? "history" : "build"));

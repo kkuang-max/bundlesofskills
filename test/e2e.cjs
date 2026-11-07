@@ -32,6 +32,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await ctx.route("https://openrouter.ai/**", async (route) => {
     const body = JSON.parse(route.request().postData());
     calls.push(body);
+    await sleep(1200); // so the loading state is visible
     const sys = body.messages[0].content;
     const text = /replace the original text/.test(sys) ? "This sentence has some mistakes in it and needs fixing."
       : /posted as a comment/.test(sys) ? "Primary button label is vague; say “Pay $42” instead of “Continue”."
@@ -59,16 +60,15 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await sleep(600);
   await shot(page, "1-squad");
 
-  // Find the dock: hit-test along the bottom row for our host element.
-  const xs = [];
-  for (let x = 300; x < 800; x += 4) {
-    const hit = await page.evaluate(([x]) => document.elementFromPoint(x, innerHeight - 60)?.tagName, [x]);
-    if (hit === "SKILL-PET-ROOT") xs.push(x);
-  }
-  assert.ok(xs.length > 50, "dock is visible");
-  const dockLeft = xs[0];
-  // pet centers: padding 18 + 52/2, then +70 per pet (52 width + 18 gap)
-  const pet = (i) => ({ x: dockLeft + 18 + 26 + i * 70, y: 760 - 14 - 8 - 32 - 24 });
+  // Pets are role=button elements named "<Name>, <Role>…" inside the (test-build open) shadow root.
+  const NAMES = ["Scout", "Quill", "Pixel", "Sprout"];
+  const petOn = async (pg, i) => {
+    const b = await pg.getByRole("button", { name: new RegExp(`^${NAMES[i]},`) }).boundingBox();
+    return { x: b.x + b.width / 2, y: b.y + 24 };
+  };
+  const pets = [];
+  for (let i = 0; i < 4; i++) pets.push(await petOn(page, i));
+  const pet = (i) => pets[i];
 
   async function drag(from, to) {
     await page.mouse.move(from.x, from.y);
@@ -86,7 +86,10 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await sleep(500);
   await shot(page, "3-quill-card");
   await page.keyboard.press("Enter"); // first skill is focused: Fix spelling & grammar
-  await sleep(700);
+  await sleep(500);
+  await shot(page, "4a-loading");
+  assert.ok(await page.getByText("Quill is rewriting…").isVisible(), "loading screen while generating");
+  await sleep(1400);
   await shot(page, "4-approve-rewrite");
   assert.equal(await page.inputValue("#t"), "this sentense have some mistake in it and need fixing", "nothing changes before approval");
   // Approve button is the first action button; tab to it is fiddly, so click by text position via accessibility tree
@@ -101,7 +104,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await sleep(900);
   await shot(page, "5-pixel-on-image");
   await page.getByRole("button", { name: "Describe image" }).click();
-  await sleep(600);
+  await sleep(1800);
   const imgCall = calls.at(-1);
   assert.ok(imgCall.messages[1].content.some((p) => p.type === "image_url" && p.image_url.url.startsWith("data:image/jpeg")), "image sent");
   await page.getByRole("button", { name: "Close", exact: true }).first().click();
@@ -121,13 +124,23 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await sleep(300);
   await shot(page, "7-scout-card-on-lasso");
   await page.getByRole("button", { name: "Summarize" }).click();
-  await sleep(600);
+  await sleep(1800);
   const lassoCall = calls.at(-1);
   assert.match(lassoCall.messages[1].content[0].text, /Maya owns the release notes/);
   await shot(page, "8-summary");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   console.log("✓ lasso → click Scout → summarize");
+
+  // ---- history panel on the page (this site)
+  await page.getByRole("button", { name: "What the pets generated on this site" }).click();
+  await sleep(300);
+  await shot(page, "8a-history-panel");
+  const hp = page.getByRole("dialog", { name: "History" });
+  assert.ok(await hp.getByText("Approved & applied").isVisible(), "rewrite logged as approved");
+  assert.equal(await hp.locator(".hitem").count(), 3, "three runs on this site");
+  await page.keyboard.press("Escape");
+  console.log("✓ in-page history for this site");
 
   // ---- 4) search bar still works
   await page.locator("#p").selectText();
@@ -143,9 +156,8 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   const fig = await ctx.newPage();
   await fig.goto("https://www.figma.com/design/AbC123/Checkout?node-id=12-34");
   await sleep(700);
-  const fxs = [];
-  for (let x = 300; x < 800; x += 4) if ((await fig.evaluate(([x]) => document.elementFromPoint(x, innerHeight - 60)?.tagName, [x])) === "SKILL-PET-ROOT") fxs.push(x);
-  const fpet = (i) => ({ x: fxs[0] + 18 + 26 + i * 70, y: 760 - 14 - 8 - 32 - 24 });
+  const fp = await petOn(fig, 2);
+  const fpet = () => fp;
   await fig.mouse.move(fpet(2).x, fpet(2).y);
   await fig.mouse.down();
   await fig.mouse.move(430, 300, { steps: 12 });
@@ -155,7 +167,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await sleep(900);
   await fig.screenshot({ path: SS + "11-figma-card.png" });
   await fig.getByRole("button", { name: "Leave critique as comment" }).click();
-  await sleep(700);
+  await sleep(1900);
   await fig.screenshot({ path: SS + "12-figma-approve.png" });
   assert.equal(figmaComment, null, "nothing posted before approval");
   await fig.getByRole("button", { name: "Approve & post comment" }).click();
@@ -190,7 +202,10 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await studio.check("#pet-quill");
   await studio.fill("#tText", "Hello team, the build is green.");
   await studio.click("#tRun");
-  await sleep(500);
+  await sleep(400);
+  await studio.screenshot({ path: SS + "15a-studio-try-loading.png" });
+  assert.match(await studio.locator("#tOut").innerText(), /Generating/);
+  await sleep(1400);
   await studio.screenshot({ path: SS + "15-studio-editor.png" });
   await studio.click("#edSave");
   await sleep(300);
@@ -200,6 +215,19 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   assert.ok(stored.library.pets.find((p) => p.id === "quill").skillIds.includes(made.id));
   await studio.screenshot({ path: SS + "16-studio-after.png" });
   console.log("✓ Studio: new skill saved and taught to Quill");
+
+  // ---- Studio history tab
+  const { history } = await sw.evaluate(() => chrome.storage.local.get("history"));
+  const by = (n) => history.find((e) => e.skillName === n);
+  assert.equal(by("Fix spelling & grammar").status, "approved");
+  assert.equal(by("Fix spelling & grammar").final, "This sentence has some mistakes in it and needs fixing.");
+  assert.equal(by("Leave critique as comment").status, "posted");
+  assert.equal(by("Make it pirate").source, "studio");
+  await studio.getByRole("tab", { name: /History/ }).click();
+  await sleep(300);
+  await studio.screenshot({ path: SS + "17-studio-history.png" });
+  assert.ok((await studio.locator("#hList .hitem").count()) >= 5);
+  console.log("✓ history: approved / posted / studio tests all logged; Studio History tab");
 
   srv.close();
   await ctx.close();

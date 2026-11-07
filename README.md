@@ -28,11 +28,23 @@ Edits apply to open tabs immediately; no rebuild.
 | **Drag a pet** onto something | A dashed outline shows what it will read ("Text", "Image", "Text field", "Selected Figma frame", "This page (screenshot)"). Drop, and the **pet card** opens with that pet's skills that fit, plus an *Ask Quill…* box. |
 | **Lasso** (dock button or **Alt+Shift+L**) | Draw around anything. Text inside the loop is collected; images or canvas apps inside it are screenshotted. Then drag a pet onto the pick, or just click a pet. |
 | **Click a pet** | Uses your lasso pick, or else your text selection. |
+| **History** (dock button) | What the pets generated on this site (see below). |
 | **Search** (dock button or **Alt+Shift+P**) | The command bar from v1, now over every pet's skills, showing which pet owns each. |
 | **Select text** | Peek: the top 3 guesses pop up beside it (turn this off in Options). |
 | **Alt+Shift+S** / **Alt+Shift+R** | Show/hide the squad · rerun the last skill on the current pick. |
 
-### 3. Context awareness: what it knows from what you picked
+### 3. History and loading
+
+- **Every generation is logged**, from pages and from the Studio's *Try it*. Each entry records the skill, the pet, the site, what it read, the output, and what happened next: *Generated*, *Approved & applied* (including your edits before approving), *Posted to Figma*, *Discarded*, *Stopped* or *Failed*.
+  - **On a page:** the dock's **History** button opens a panel showing what was generated **on this site**. Switch to *Everywhere*, search, copy.
+  - **In the Studio:** the **History** tab has the full log. Filter by pages vs. Studio tests and by site, search, see input and output side by side, copy, delete, clear.
+  - Stored locally (last 300 runs). Images aren't kept, only a count.
+- **Loading states:**
+  - While generating, the panel shows the pet hopping, "Quill is rewriting…", what's being sent, an elapsed timer, skeleton lines and a **Stop** button. Text then streams in with a cursor.
+  - "Sniffing…" shows while a pet reads a Figma frame or takes a screenshot, and "Reading your pick…" while a lasso pick is processed.
+  - The Studio's *Try it* has its own loader and a Stop button.
+
+### 4. Context awareness: what it knows from what you picked
 
 | You picked… | It reads | Skills offered | Can change it? |
 |---|---|---|---|
@@ -89,13 +101,14 @@ npm test
 npm run e2e
 ```
 
-`npm test` has 14 unit tests covering matching, permissions, Figma URL parsing, request building and the OpenRouter client. `npm run e2e` loads the real extension in Chromium with OpenRouter and the Figma API **faked**, then checks:
+`npm test` has 18 unit tests covering matching, permissions, Figma URL parsing, request building, history and the OpenRouter client. `npm run e2e` loads the real extension in Chromium with OpenRouter and the Figma API **faked**, then checks:
 - drag Quill onto a field → approve a rewrite (and that nothing changes before approval)
 - drag Pixel onto an image → a screenshot is sent
 - lasso a paragraph → click Scout → summarize
 - the search bar
 - a fake Figma file → drag Pixel onto the frame → approve → a comment is posted to node `12:34` with the frame's text layers in the prompt
 - Studio: drag a skill onto a pet, create a new skill and assign it
+- the loading screen appears while generating; history logs approved / posted / Studio-test runs; the in-page History panel and the Studio History tab
 
 Screenshots go to `test/screenshots/`.
 

@@ -4,6 +4,10 @@
 import { DEFAULTS, streamChat } from "./openrouter.js";
 import { buildRequest, normalizeLibrary } from "./library.js";
 import { figmaComment, figmaFrame } from "./figma.js";
+import { addEntry, makeEntry, mutateHistory, updateEntry } from "./history.js";
+
+// A worker that died mid-run leaves "running" entries behind; settle them.
+mutateHistory((h) => h.map((e) => (e.status === "running" ? { ...e, status: "stopped" } : e)));
 
 async function settings() {
   return chrome.storage.local.get({ apiKey: "", model: DEFAULTS.model, effort: DEFAULTS.effort, figmaToken: "" });
@@ -12,8 +16,8 @@ async function library() {
   const { library } = await chrome.storage.local.get("library");
   return normalizeLibrary(library);
 }
-function openStudio() {
-  chrome.tabs.create({ url: chrome.runtime.getURL("studio.html") });
+function openStudio(hash = "") {
+  chrome.tabs.create({ url: chrome.runtime.getURL("studio.html") + (hash ? `#${hash}` : "") });
 }
 
 // --- entry points ---------------------------------------------------------------
@@ -26,7 +30,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   });
 });
 
-chrome.action.onClicked.addListener(openStudio);
+chrome.action.onClicked.addListener(() => openStudio());
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   chrome.contextMenus.create({ id: "summon", title: "Ask the pet…", contexts: ["selection", "editable", "page", "image"] });
@@ -51,7 +55,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
       return;
     case "open-studio":
-      openStudio();
+      openStudio(msg.hash);
       return;
     case "capture":
       // Screenshot of the visible tab; the content script crops it.
@@ -60,6 +64,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return reply(settings().then((s) => figmaFrame(s.figmaToken, msg.fileKey, msg.nodeId)));
     case "figma-comment":
       return reply(settings().then((s) => figmaComment(s.figmaToken, msg.fileKey, msg.nodeId, msg.message)));
+    case "history-update":
+      // The page reports what happened after generation: approved / posted / discarded.
+      return reply(mutateHistory((h) => updateEntry(h, msg.id, { status: msg.status, ...(msg.final != null ? { final: msg.final } : {}) })).then(() => ({ ok: true })));
   }
 });
 
@@ -68,8 +75,12 @@ chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "run-skill") return;
   const abort = new AbortController();
   port.onDisconnect.addListener(() => abort.abort());
+  let started = false;
 
   port.onMessage.addListener(async (msg) => {
+    if (msg?.type === "stop") return abort.abort();
+    if (started) return;
+    started = true;
     const post = (m) => {
       try {
         port.postMessage(m);
@@ -94,6 +105,14 @@ chrome.runtime.onConnect.addListener((port) => {
       return;
     }
 
+    // Log the run before it starts, so the history shows it while it's generating.
+    const id = `h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const entry = makeEntry({ id, source: msg.source === "studio" ? "studio" : "page", context: msg.context, skill, pet, instruction: msg.instruction, request: msg.request });
+    await mutateHistory((h) => addEntry(h, entry));
+    post({ type: "started", historyId: id });
+    const t0 = Date.now();
+    let output = "";
+
     try {
       const result = await streamChat({
         apiKey,
@@ -102,11 +121,20 @@ chrome.runtime.onConnect.addListener((port) => {
         system: req.system,
         content: req.content,
         signal: abort.signal,
-        onText: (delta) => post({ type: "delta", text: delta }),
+        onText: (delta) => {
+          output += delta;
+          post({ type: "delta", text: delta });
+        },
       });
-      post({ type: "done", stopReason: result.finishReason, usage: result.usage });
+      await mutateHistory((h) => updateEntry(h, id, { status: "done", output: result.text, ms: Date.now() - t0 }));
+      post({ type: "done", historyId: id, stopReason: result.finishReason, usage: result.usage });
     } catch (e) {
-      if (e.name === "AbortError") return;
+      if (e.name === "AbortError") {
+        await mutateHistory((h) => updateEntry(h, id, { status: "stopped", output, ms: Date.now() - t0 }));
+        post({ type: "stopped", historyId: id });
+        return;
+      }
+      await mutateHistory((h) => updateEntry(h, id, { status: "error", output, error: e.message || String(e), ms: Date.now() - t0 }));
       post({ type: "error", code: e.code, message: e.message || String(e) });
     }
   });
