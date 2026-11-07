@@ -64,6 +64,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return reply(settings().then((s) => figmaFrame(s.figmaToken, msg.fileKey, msg.nodeId)));
     case "figma-comment":
       return reply(settings().then((s) => figmaComment(s.figmaToken, msg.fileKey, msg.nodeId, msg.message)));
+    case "open-run":
+      // Studio/History → the page an answer was made on: switch to (or open) it and jump there.
+      return reply((async () => {
+        await chrome.storage.local.set({ pendingJump: { url: msg.url, historyId: msg.historyId, at: Date.now() } });
+        const tabs = await chrome.tabs.query({});
+        const tab = tabs.find((t) => t.url && t.url.split("#")[0] === msg.url.split("#")[0]);
+        if (tab) {
+          await chrome.tabs.update(tab.id, { active: true });
+          await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+          await chrome.storage.local.remove("pendingJump");
+          await chrome.tabs.sendMessage(tab.id, { type: "jump", historyId: msg.historyId }).catch(() => {});
+        } else await chrome.tabs.create({ url: msg.url });
+        return { ok: true };
+      })());
     case "history-update":
       // The page reports what happened after generation: approved / posted / discarded.
       return reply(mutateHistory((h) => updateEntry(h, msg.id, { status: msg.status, ...(msg.final != null ? { final: msg.final } : {}) })).then(() => ({ ok: true })));

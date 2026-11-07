@@ -201,6 +201,41 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   assert.ok(Math.abs(pb2.y - pb0.y) < 3 && Math.abs(pb2.x - pb0.x) < 3, "restored at the same spot");
   await shot(page, "8g-pin-after-reload");
   console.log("✓ pins: pet left where it worked, scrolls with the page, reopens answers, more skills + follow-ups, survives reload");
+
+  // ---- one sticker per pet: a second spot joins Scout's sticker history; history jumps back to each spot
+  const scoutPins = () => page.locator('.pin[title^="Scout"]');
+  const h1 = await page.locator("h1").boundingBox();
+  const sp = await page.getByRole("button", { name: /^Scout,/ }).boundingBox();
+  await page.mouse.move(sp.x + sp.width / 2, sp.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(h1.x + 60, h1.y + h1.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await sleep(400);
+  await page.getByRole("dialog", { name: "Scout's skills" }).getByRole("button").first().click();
+  await sleep(1800);
+  await page.keyboard.press("Escape");
+  await sleep(200);
+  assert.equal(await scoutPins().count(), 1, "still one Scout sticker on the page");
+  assert.equal(await scoutPins().locator(".pin-count").innerText(), "4");
+  const onH1 = await scoutPins().boundingBox();
+  assert.ok(Math.abs(onH1.y + 17 - (h1.y + h1.height / 2)) < 30, "sticker moved to where it last worked");
+  await shot(page, "8h-sticker-moved");
+  // scroll away, then History → "Show on page" for the earlier answer on the paragraph
+  await page.evaluate(() => scrollTo(0, 600));
+  await sleep(200);
+  await page.getByRole("button", { name: /What the pets generated on this site/ }).click();
+  await sleep(300);
+  await page.getByRole("dialog", { name: "History" }).locator(".hitem", { hasText: "Pull dates" }).getByRole("button", { name: "Show on page" }).click();
+  await sleep(900);
+  assert.ok((await page.evaluate(() => scrollY)) < 200, "scrolled back to the spot");
+  const paraBox = await page.locator("#p").boundingBox();
+  const atP = await scoutPins().boundingBox();
+  assert.ok(Math.abs(atP.y + 17 - paraBox.y) < 30, `sticker jumped to the paragraph (${atP.y} vs ${paraBox.y})`);
+  const card = page.getByRole("dialog", { name: "Answers left here" });
+  assert.ok(await card.locator("details[open]", { hasText: "Pull dates" }).count(), "that answer is open in the sticker's history");
+  await shot(page, "8i-jumped-to-spot");
+  await page.keyboard.press("Escape");
+  console.log("✓ one sticker per pet with a history; History → Show on page scrolls to the spot and opens that answer");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   console.log("✓ select tool box → click Scout → summarize");
@@ -592,6 +627,13 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await studio.screenshot({ path: SS + "17-studio-history.png" });
   assert.ok((await studio.locator("#hList .hitem").count()) >= 5);
   console.log("✓ history: approved / posted / studio tests all logged; Studio History tab");
+  // Studio → "Show where it was made" switches to the page tab and jumps to the spot
+  await page.evaluate(() => scrollTo(0, 800));
+  await studio.locator(".hitem", { hasText: "Pull dates" }).first().getByRole("button", { name: "Show where it was made" }).click();
+  await sleep(1500);
+  assert.ok((await page.evaluate(() => scrollY)) < 200, "page scrolled to the spot");
+  assert.ok(await page.getByRole("dialog", { name: "Answers left here" }).locator("details[open]", { hasText: "Pull dates" }).count(), "and opened that answer");
+  console.log("✓ Studio History → Show where it was made");
 
   srv.close();
   await ctx.close();

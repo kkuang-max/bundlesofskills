@@ -617,6 +617,7 @@ function historyCard(e) {
     ]),
     el("div", { class: "hact" }, [
       el("button", { class: "btn small", type: "button", text: "Expand", "aria-pressed": "false", onclick: (ev) => { const big = ev.target.closest(".hitem").classList.toggle("big"); ev.target.textContent = big ? "Shrink" : "Expand"; ev.target.setAttribute("aria-pressed", String(big)); } }),
+      e.source === "page" && e.url ? el("button", { class: "btn small", type: "button", text: "Show where it was made", onclick: () => chrome.runtime.sendMessage({ type: "open-run", url: e.url, historyId: e.id }) }) : null,
       result ? el("button", { class: "btn small", type: "button", text: "Copy", onclick: async (ev) => { await copyRich(result); ev.target.textContent = "Copied"; } }) : null,
       el("button", { class: "btn small danger", type: "button", text: "Delete", onclick: () => mutateHistory((h) => h.filter((x) => x.id !== e.id)) }),
     ]),

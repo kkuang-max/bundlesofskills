@@ -28,6 +28,8 @@ Each pet is one of seven characters: **cat, dog, bird, frog, bunny, bear, ghost*
 
 ### 2. On any page: the squad dock (04 Pet squad)
 
+The dock is frosted glass (blurred and tinted over whatever page is behind it, with a soft highlight edge), so it looks the same on every tab without hiding the page.
+
 | Do this | What happens |
 |---|---|
 | **Drag a pet** onto something | A dashed outline shows what it will read ("Text", "Image", "Text field", "Selected Figma frame", "This page (screenshot)"). Drop, and the **pet card** opens with that pet's skills that fit, plus an *Ask Quill…* box. |
@@ -58,17 +60,22 @@ Each pet is one of seven characters: **cat, dog, bird, frog, bunny, bear, ghost*
 
 Answers render as formatted Markdown: headings, **bold**, *italic*, `code`, code blocks, bullet and numbered lists (nested), checklists, quotes, tables and links. The renderer builds page elements directly, so model text is never inserted as HTML, and links only work if they're http(s) or mailto. The prompt asks for Markdown when it helps scanning; rewrites and Figma comments stay plain text, because they go straight into your document. **Copy** puts rich text on the clipboard, so pasting into Docs or Gmail keeps the formatting, and plain-text apps get the Markdown.
 
-### Pets stay where they worked (pins)
+### Pets stay where they worked (stickers)
 
-After a pet generates something, it **stays on the page at that exact spot** as a small pin:
+After a pet generates something, it **stays on the page at that exact spot** as a small sticker:
 - on the element you dropped it on, at the point where you dropped it
 - or at the corner of your selection or Select pick
+
+**One sticker per pet per page.** When Scout works somewhere else on the same page, its sticker moves to the new spot and the answer joins **Scout's history here**, instead of a second Scout sticker appearing. Every answer still remembers the exact spot it was made for:
+- In the sticker card, each answer says *Here:* (the spot the sticker is on now) or *On:* (somewhere else), with **Go to this spot**. That scrolls the page (or inner panel) back there, flashes the outline, moves the sticker, and opens that answer.
+- The dock's **History** panel has **Show on page** for answers made on this page.
+- The Studio's **History** tab has **Show where it was made**. It switches to the tab with that page, or opens it, and jumps to the spot.
 
 The pin is attached to the content, so it scrolls and reflows with the page, and it's **saved per page**: next time you open the page, the pins are back where they were. If a site re-renders, the extension finds the element again by its position in the page structure.
 
 - **Hover** a pin to outline what it worked on. **Click** it to reopen everything generated there: rendered Markdown, quiz answers still hidden until you reveal them, what was applied or posted, and Copy.
 - **Do more here:** from the pin, pick any pet and run another skill on the same spot, or **ask a follow-up**. Follow-ups include the earlier answers, so "make it shorter" or "turn that into a table" work. New runs on the same spot join the same pin (the badge shows how many).
-- **Figma:** the pet sits inside the frame, where you dropped it, with a *Posted* badge once you approve the comment. The Figma comment itself is pinned inside the frame (24px in from its top-left corner) rather than on its edge. If you pan or zoom the Figma canvas, the pet pin doesn't move with it, because Figma doesn't share where the frame is on screen. The real Figma comment always stays on the frame.
+- **Figma:** the pet sits inside the frame, where you dropped it, with a *Posted* badge once you approve the comment. The Figma comment itself is pinned inside the frame (24px in from its top-left corner) rather than on its edge. When you pan or zoom the canvas, the sticker follows the frame visually (see below). The real Figma comment always stays on the frame.
 - Pins can be turned off in Options, removed one at a time from the pin card, and keep the 60 most recent pages.
 
 ### The selection is pinned to the page
@@ -81,11 +88,20 @@ What you pick with **Select** isn't a floating overlay. Each part is attached to
 - **Expand** (⤢ in the panel header) opens a large reading view. The page's History panel and the Studio's history items also have Expand.
 - **Reveal later:** *Quiz me* and *Make flashcards* show the questions with the answers hidden behind blurred cards. Click one to reveal it, or **Reveal all**. Answers stay hidden while generating too. Any skill can do this: tell it to print a line `=== ANSWERS ===` before the answers.
 
+### Following scroll and zoom
+
+Selections and stickers stay with the content rather than the screen:
+- **Normal pages and inner panels** (Docs, Notion, chat apps): a spot is stored relative to the nearest scrolling container, so it moves when you scroll the page or the panel it's in, and it's corrected for CSS zoom.
+- **Canvas apps** (Figma, Miro…), where the page's code doesn't show what's on screen: the extension keeps a tiny greyscale thumbnail of what you picked.
+  - While you pan, it follows your wheel or drag. While you zoom, the outline fades.
+  - When the canvas settles, it takes a screenshot and finds the thumbnail again at any zoom level, then snaps the outline and sticker back on.
+  - If the spot is panned off-screen, the outline hides and the sticker card says so. It reappears when you pan back.
+
 ### 3. History and loading
 
 - **Every generation is logged**, from pages and from the Studio's *Try it*. Each entry records the skill, the pet, the site, what it read, the output, and what happened next: *Generated*, *Approved & applied* (including your edits before approving), *Posted to Figma*, *Discarded*, *Stopped* or *Failed*.
-  - **On a page:** the dock's **History** button opens a panel showing what was generated **on this site**. Switch to *Everywhere*, search, copy.
-  - **In the Studio:** the **History** tab has the full log. Filter by pages vs. Studio tests and by site, search, see input and output side by side, copy, delete, clear.
+  - **On a page:** the dock's **History** button opens a panel showing what was generated **on this site**. Switch to *Everywhere*, search, copy. Use **Show on page** to jump to where an answer was made.
+  - **In the Studio:** the **History** tab has the full log. Filter by pages vs. Studio tests and by site, search, see input and output side by side, copy, delete, clear. Use **Show where it was made** to open that page at the spot.
   - Stored locally (last 300 runs). Images aren't kept, only a count.
 - **Loading states:**
   - While generating, the panel shows the pet hopping, "Quill is rewriting…", what's being sent, an elapsed timer, skeleton lines and a **Stop** button. Text then streams in with a cursor.
@@ -160,6 +176,8 @@ npm run e2e
 - minimize to small pets / dots, expand on hover, selection and Select, hover cards, Alt+1 / 1–9 / Alt-drag box select / click + Shift-click select / Alt+/;
 - the selection stays pinned to the paragraph when scrolling and is still a drop target; the page scrolls under the Select tool;
 - answers render as Markdown (heading, bold, table, checklist), no raw syntax;
+- one sticker per pet: a second spot joins the pet's sticker history; History → Show on page and Studio → Show where it was made scroll back to the spot and open that answer;
+- tracking: selections follow an inner scroll panel and CSS zoom; on a pannable canvas the outline follows panning, re-finds the spot after zooming, and hides when the spot is off-screen;
 - pins: a pet is left where it worked, scrolls with the page, reopens answers, runs more skills and follow-ups on the same spot, survives a reload; the Figma pin sits in the frame with a Posted badge, and the comment is placed inside the frame;
 - characters: species per pet, switching one in the Studio updates the dock live;
 - a long quiz answer scrolls even when the page swallows wheel events, the panel expands, and answers stay hidden until clicked;
@@ -171,6 +189,7 @@ Screenshots go to `test/screenshots/`.
 
 - **Editing Figma layers** (changing text in the file) isn't possible from a browser extension. The REST API can read and comment, not edit, so that needs a small Figma plugin. Today pets propose new copy, which you can copy or post as a comment.
 - **Google Docs**: the extension reads by screenshot and can't write back into the doc. Commenting into Docs would need the Docs API (OAuth) or a Docs add-on.
+- **Canvas tracking is visual.** It can lose a spot that changes a lot (edited, re-styled) or that looks like something else nearby. When it loses one, it says so instead of guessing.
 - **Screenshots only cover what's visible.** Scroll so the thing is on screen first.
 - **Key handling**: each user brings their own OpenRouter key. A real product would put a backend in front.
 

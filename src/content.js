@@ -269,6 +269,23 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 .hd-e{left:100%;top:50%;cursor:ew-resize}.hd-se{left:100%;top:100%;cursor:nwse-resize}.hd-s{left:50%;top:100%;cursor:ns-resize}
 .hd-sw{left:0;top:100%;cursor:nesw-resize}.hd-w{left:0;top:50%;cursor:ew-resize}
 
+
+/* glass: the squad bar and its hover cards */
+.dock{background:rgba(255,255,255,.46);-webkit-backdrop-filter:blur(22px) saturate(180%);backdrop-filter:blur(22px) saturate(180%);border:1px solid rgba(255,255,255,.7);box-shadow:0 12px 34px rgba(27,26,31,.18),0 2px 6px rgba(27,26,31,.08),inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(255,255,255,.25)}
+.dock::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.55),rgba(255,255,255,0) 55%)}
+.dock>*{position:relative}
+.tool .ic{background:rgba(255,255,255,.55);border-color:rgba(255,255,255,.75);box-shadow:0 1px 3px rgba(27,26,31,.08)}
+.tool .ic.on{background:rgba(58,111,216,.12)}
+.help,.minbtn{background:rgba(255,255,255,.45)}
+.sep{background:rgba(27,26,31,.12)}
+.pet .key{background:rgba(255,255,255,.75);border-color:rgba(255,255,255,.9)}
+.tip{background:rgba(255,255,255,.72);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);border-color:rgba(255,255,255,.75)}
+/* sticker history */
+.pin-run.here{border-color:#C9C8FA;background:rgba(79,85,220,.04)}
+.pin-run summary .spot{font-size:11px;font-weight:500;color:#5E5B66;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+svg.pinline.flash rect{animation:flash 1.6s ease-out}
+@keyframes flash{0%{stroke-width:5;fill:rgba(58,111,216,.28)}100%{stroke-width:2}}
+
 /* pins: pets left where they worked */
 .pins{position:fixed;left:0;top:0;width:0;height:0}
 .pin{position:fixed;width:34px;height:34px;padding:0;border-radius:50%;line-height:0;filter:drop-shadow(0 4px 8px rgba(27,26,31,.28));transition:transform .12s ease;animation:pinpop .25s ease-out}
@@ -1542,9 +1559,17 @@ function hidePinOutline() {
   layer.querySelectorAll("svg.pinline").forEach((n) => n.remove());
 }
 
+// One sticker per pet per page. Every answer is a "run" that remembers its own
+// spot; the sticker sits at the spot it last worked on (or the one you jumped to).
+const plainOf = (ctx) => { const { images, ...rest } = ctx || {}; return rest; };
 async function savePins() {
   const { pins: all = {} } = await chrome.storage.local.get("pins");
-  const mine = pins.map((p) => ({ ...p, parts: anchors.get(p.anchorId)?.parts.map(serializePart) || p.parts, point: anchors.get(p.anchorId)?.point || null }));
+  const ser = (anchorId, fallback) => { const a = anchors.get(anchorId); return a ? { parts: a.parts.map(serializePart), point: a.point || null } : fallback; };
+  const mine = pins.map(({ live, ...p }) => ({
+    ...p,
+    v: 2,
+    runs: p.runs.map(({ live: _l, ...r }) => ({ ...r, spot: ser(r.anchorId, r.spot) })),
+  }));
   if (mine.length) all[PAGE_KEY] = mine;
   else delete all[PAGE_KEY];
   // Keep storage bounded: the 60 most recently used pages.
@@ -1554,27 +1579,43 @@ async function savePins() {
 }
 async function loadPins() {
   const { pins: all = {} } = await chrome.storage.local.get("pins");
-  pins = (all[PAGE_KEY] || []).map((p) => {
-    const anchorId = rid("a");
-    anchors.set(anchorId, { parts: p.parts.map(restorePart), point: p.point });
-    return { ...p, anchorId };
-  });
+  const saved = all[PAGE_KEY] || [];
+  const byPet = new Map();
+  for (const p of saved) {
+    // v1 pins kept one spot for all their runs: give each run that spot.
+    const runs = (p.runs || []).map((r) => {
+      const spot = r.spot || { parts: p.parts || [], point: p.point || null };
+      const anchorId = rid("a");
+      anchors.set(anchorId, { parts: spot.parts.map(restorePart), point: spot.point });
+      return { ...r, spot, anchorId, ctx: r.ctx || p.ctx };
+    });
+    const key = p.petId || "none";
+    const pin = byPet.get(key) || { ...p, runs: [] };
+    pin.runs.push(...runs);
+    byPet.set(key, pin);
+  }
+  pins = [...byPet.values()].map((p) => {
+    p.runs.sort((a, b) => b.at - a.at);
+    const cur = p.runs.find((r) => r.anchorId === p.currentRun) || p.runs[0];
+    return { ...p, anchorId: cur?.anchorId, ctx: cur?.ctx || p.ctx, currentRun: cur?.historyId };
+  }).filter((p) => p.runs.length);
   renderPins();
+  checkPendingJump();
 }
 
-/** Called when a run finishes: add it to the pin on that spot (or leave a new pin). */
+/** Called when a run finishes: add it to this pet's sticker on the page (one sticker per pet). */
 function pinRun(ctx, pet, skill, label, historyId) {
   if (!ctx.anchorId || !anchors.has(ctx.anchorId)) return;
-  let pin = pins.find((p) => p.anchorId === ctx.anchorId);
-  const { images, ...plainCtx } = ctx; // screenshots aren't stored; they're retaken when needed
+  const petId = pet?.id || null;
+  let pin = pins.find((p) => (p.petId || null) === petId);
   if (!pin) {
-    pin = { id: rid("pin"), anchorId: ctx.anchorId, petId: pet?.id || null, species: pet?.species, color: pet?.color, ctx: plainCtx, runs: [], at: Date.now() };
+    pin = { id: rid("pin"), petId, species: pet?.species, color: pet?.color, runs: [], at: Date.now() };
     pins.push(pin);
   }
-  pin.live = ctx; // this session: keep the full context (with screenshots) for follow-ups
-  if (pet) Object.assign(pin, { petId: pet.id, species: pet.species, color: pet.color });
-  pin.runs.unshift({ historyId, skillName: label, skillId: skill?.id || null, status: "done", at: Date.now() });
-  pin.at = Date.now();
+  if (pet) Object.assign(pin, { species: pet.species, color: pet.color });
+  pin.runs.unshift({ historyId, skillName: label, skillId: skill?.id || null, status: "done", at: Date.now(), anchorId: ctx.anchorId, ctx: plainOf(ctx), live: ctx, label: ctx.label });
+  // the sticker moves to where it just worked
+  Object.assign(pin, { anchorId: ctx.anchorId, ctx: plainOf(ctx), live: ctx, currentRun: historyId, at: Date.now() });
   renderPins();
   savePins();
 }
@@ -1590,6 +1631,65 @@ function removePin(pin) {
   hidePinOutline();
   renderPins();
   savePins();
+}
+function findRun(historyId) {
+  for (const pin of pins) { const run = pin.runs.find((r) => r.historyId === historyId); if (run) return { pin, run }; }
+  return null;
+}
+
+/** Bring a spot into view: the page, an inner scroll panel, or (canvas) only if it's on screen. */
+function scrollToAnchor(a, instant = false) {
+  // Smooth scrolling can stall in a tab that was only just switched to: jump instead.
+  const behavior = instant || document.visibilityState !== "visible" ? "instant" : "smooth";
+  const part = a?.parts?.[0];
+  if (!part) return "gone";
+  if (part.visual) return part.lost ? "offscreen" : "ok";
+  const elOf = part.node?.isConnected ? part.node : part.range?.startContainer?.isConnected ? part.range.startContainer.parentElement : null;
+  if (part.frac && part.scroll && elOf) {
+    elOf.scrollIntoView({ block: "nearest", behavior });
+    const r = anchorRect(part), b = elOf.getBoundingClientRect();
+    elOf.scrollBy({ top: r.top + r.height / 2 - (b.top + b.height / 2), left: 0, behavior });
+    return "ok";
+  }
+  // A whole element: let the browser bring it into view (handles nested scrollers). A text range: use its own box,
+  // since its parent can be something huge like <body>.
+  if (part.node?.isConnected && !part.frac) { part.node.scrollIntoView({ block: "center", behavior }); return "ok"; }
+  const r = anchorRect(part);
+  if (r.left < -9000) return "gone";
+  scrollBy({ top: r.top + r.height / 2 - innerHeight / 2, behavior });
+  return "ok";
+}
+/** History → the spot it was made for: scroll there, flash it, move the sticker, open that answer. */
+async function jumpToRun(historyId, instant = false) {
+  const found = findRun(historyId);
+  if (!found) return false;
+  const { pin, run } = found;
+  clearUI();
+  Object.assign(pin, { anchorId: run.anchorId, ctx: run.ctx, live: run.live, currentRun: run.historyId });
+  savePins();
+  const state = scrollToAnchor(anchors.get(run.anchorId), instant);
+  await new Promise((r) => setTimeout(r, 450)); // let smooth scrolling land
+  renderPins();
+  flashSpot(run.anchorId);
+  const b = pinsLayer.querySelector(`[data-pin="${pin.id}"]`);
+  await openPinCard(pin, b, run.historyId, state === "offscreen" ? "That spot is off-screen on the canvas. Pan to it and the outline will be there." : state === "gone" ? "That part of the page isn't here any more." : "");
+  return true;
+}
+function flashSpot(anchorId) {
+  const a = anchors.get(anchorId);
+  if (!a) return;
+  const svg = outlineSvg(a.parts.map(anchorRect).filter((r) => r.width || r.height));
+  svg.classList.add("pinline", "flash");
+  layer.prepend(svg);
+  setTimeout(() => svg.remove(), 1800);
+}
+// Studio → "Show where it was made": the background opened this page and left a note.
+async function checkPendingJump() {
+  const { pendingJump } = await chrome.storage.local.get("pendingJump");
+  if (!pendingJump || Date.now() - pendingJump.at > 60000) return;
+  if (!pendingJump.url || !location.href.startsWith(pendingJump.url.split("#")[0])) return;
+  await chrome.storage.local.remove("pendingJump");
+  setTimeout(() => jumpToRun(pendingJump.historyId, true), 700);
 }
 
 /** Rebuild what's needed to run another skill on a pin's spot. */
@@ -1613,7 +1713,7 @@ async function pinContext(pin) {
   return { ctx, target };
 }
 
-async function openPinCard(pin, pinEl) {
+async function openPinCard(pin, pinEl, openRun = null, note = "") {
   clearUI();
   let petId = pin.petId && lib.pets.some((p) => p.id === pin.petId) ? pin.petId : lib.pets[0]?.id;
   const { history = [] } = await chrome.storage.local.get("history");
@@ -1628,15 +1728,19 @@ async function openPinCard(pin, pinEl) {
     if (text) renderAnswer(outBox, text, true);
     else outBox.textContent = "(This answer is no longer in History.)";
     const skill = r.skillId ? lib.skills.find((s) => s.id === r.skillId) : null;
-    const item = el("details", { class: "pin-run", open: i === 0 }, [
+    const here = r.anchorId === pin.anchorId;
+    const item = el("details", { class: "pin-run" + (here ? " here" : ""), open: openRun ? r.historyId === openRun : i === 0 }, [
       el("summary", {}, [
         skill ? sticker(skill, 22) : el("span", { html: ICON.search, class: "muted" }),
-        el("span", { class: "grow", text: r.skillName }),
+        el("span", { class: "grow" }, [el("div", { text: r.skillName }), el("div", { class: "spot", text: `${here ? "Here" : "On"}: ${r.label || r.ctx?.label || "a spot on this page"}` })]),
         r.status === "posted" ? el("span", { class: "hstat s-posted", text: "Posted" }) : e?.status === "approved" ? el("span", { class: "hstat s-approved", text: "Applied" }) : null,
         el("span", { class: "muted", style: { fontSize: "11px" }, text: timeAgo(r.at) }),
       ]),
       outBox,
-      text ? el("div", { class: "hact" }, [el("button", { class: "link", text: "Copy", onclick: async (ev) => { await copyRich(text); ev.target.textContent = "Copied"; } })]) : null,
+      el("div", { class: "hact" }, [
+        el("button", { class: "link", text: here ? "Show on page" : "Go to this spot", onclick: () => jumpToRun(r.historyId) }),
+        text ? el("button", { class: "link", text: "Copy", onclick: async (ev) => { await copyRich(text); ev.target.textContent = "Copied"; } }) : null,
+      ]),
     ]);
     runsBox.append(item);
   });
@@ -1673,18 +1777,19 @@ async function openPinCard(pin, pinEl) {
   });
   ["keyup", "keypress"].forEach((t) => ask.addEventListener(t, (e) => e.stopPropagation()));
 
+  const owner = lib.pets.find((p) => p.id === pin.petId);
   const card = el("div", { class: "card pincard", role: "dialog", "data-pin": pin.id, "aria-label": "Answers left here" }, [
     el("div", { class: "top" }, [
-      el("span", { class: "display", text: "Left here" }),
+      el("span", { class: "display", text: owner ? `${owner.name}'s history here` : "History here" }),
       el("span", { class: "muted", style: { fontSize: "11px", marginLeft: "auto" }, text: `${pin.runs.length} answer${pin.runs.length === 1 ? "" : "s"}` }),
       expandButton(() => card),
       el("button", { class: "x", "aria-label": "Close", text: "×", onclick: () => clearUI() }),
     ]),
-    el("div", { class: "ctx", text: `On: ${ctx.label || "this spot"}` }),
+    note ? el("div", { class: "warn", text: note }) : null,
     runsBox,
-    el("div", { class: "pin-more" }, [el("div", { class: "lbl", text: "Do more here" }), petsRow, skillsRow, el("div", { class: "ask" }, [ask])]),
+    el("div", { class: "pin-more" }, [el("div", { class: "lbl", text: `Do more on: ${ctx?.label || "this spot"}` }), petsRow, skillsRow, el("div", { class: "ask" }, [ask])]),
     el("div", { class: "foot" }, [
-      el("button", { class: "link", text: "Remove this pin", onclick: () => (removePin(pin), clearUI()) }),
+      el("button", { class: "link", text: "Remove sticker", onclick: () => (removePin(pin), clearUI()) }),
       el("button", { class: "link", style: { marginLeft: "auto" }, text: "History", onclick: () => openHistory() }),
     ]),
   ]);
@@ -1694,12 +1799,13 @@ async function openPinCard(pin, pinEl) {
   placeBesidePin(card, pt);
   showPinOutline(pin);
   setOpen("card", true);
-  card.querySelector(".chip-skill,input")?.focus();
+  if (openRun) card.querySelector("details[open]")?.scrollIntoView({ block: "nearest" });
+  else card.querySelector(".chip-skill,input")?.focus();
 }
 
 /** Follow-ups carry the earlier answers so "make it shorter" etc. has context. */
 function followUp(pin, byId, question) {
-  const prev = pin.runs
+  const prev = [...pin.runs.filter((r) => r.anchorId === pin.anchorId), ...pin.runs.filter((r) => r.anchorId !== pin.anchorId)]
     .slice(0, 3)
     .map((r) => byId.get(r.historyId))
     .filter(Boolean)
@@ -2218,7 +2324,8 @@ function historyItem(e) {
     el("div", { class: "hact" }, [
       text && e.status !== "error" ? el("button", { class: "link", text: "Copy", onclick: async (ev) => { await copyRich(text); ev.target.textContent = "Copied"; } }) : null,
       text && text.length > 220 ? more : null,
-      historyScope === "all" && e.url && e.url !== location.href ? el("a", { class: "link", href: e.url, target: "_blank", rel: "noopener", text: e.host }) : null,
+      findRun(e.id) ? el("button", { class: "link", text: "Show on page", onclick: () => jumpToRun(e.id) }) : null,
+      !findRun(e.id) && e.source === "page" && e.url && e.url.split("#")[0] !== location.href.split("#")[0] ? el("button", { class: "link", text: `Open on ${e.host}`, onclick: () => chrome.runtime.sendMessage({ type: "open-run", url: e.url, historyId: e.id }) }) : null,
     ]),
   ]);
 }
@@ -2282,6 +2389,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "summon") openBar();
   if (msg.type === "lasso" || msg.type === "select") startSelect();
   if (msg.type === "history") openHistory();
+  if (msg.type === "jump") jumpToRun(msg.historyId, true);
   if (msg.type === "toggle-squad") chrome.storage.local.set({ squadVisible: !prefs.squadVisible });
   if (msg.type === "rerun-last") {
     if (!lastRun) return openBar();
