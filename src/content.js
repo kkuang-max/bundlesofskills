@@ -27,6 +27,7 @@ import {
 } from "./library.js";
 import { STATUS_LABEL, filterHistory, timeAgo } from "./history.js";
 import { renderAnswer } from "./answer-view.js";
+import { crop, findTemplate, packTemplate, resize as resizeGray, scaleRange, unpackTemplate } from "./track.js";
 import { MARKDOWN_CSS, copyRich } from "./markdown.js";
 
 const PEEK_MIN_CHARS = 12;
@@ -253,6 +254,12 @@ svg.pickline{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible}
 .hout .reveal{margin-top:8px}
 
 
+
+
+/* fading while a canvas pans/zooms (overlays re-find their spot when it settles) */
+.layer .pickline,.layer .pickframe,.layer .pins{transition:opacity .12s ease}
+.layer.tracking .pickline,.layer.tracking .pickframe,.layer.tracking .pins{opacity:0}
+.pickchip .lostnote{color:#C9C3BE}
 
 /* resize handles on a selection */
 .pickframe{position:fixed;pointer-events:none!important}
@@ -805,7 +812,13 @@ async function dropPet(pet, t, x, y) {
       // Pin to the thing it was dropped on, at the exact spot (as a fraction, so it survives resizes).
       const r = t.rect;
       const point = r.width && r.height ? { fx: Math.min(1, Math.max(0, (x - r.left) / r.width)), fy: Math.min(1, Math.max(0, (y - r.top) / r.height)) } : null;
-      setAnchor(ctx, [t.anchor ? { node: t.anchor } : docAnchor(r)], point);
+      if (t.anchor && isCanvasLike(t.anchor)) {
+        // On a canvas the pin must follow the content, not the canvas element.
+        const cb = t.anchor.getBoundingClientRect();
+        const box = new DOMRect(Math.max(cb.left, x - 90), Math.max(cb.top, y - 70), 180, 140);
+        const va = await visualAnchor(box, t.anchor);
+        setAnchor(ctx, [va], { fx: (x - box.left) / box.width, fy: (y - box.top) / box.height });
+      } else setAnchor(ctx, [t.anchor ? { node: t.anchor } : docAnchor(r)], point);
     }
     card.remove();
     mountCard(pet, ctx, target, x + 16, y - 20);
@@ -997,7 +1010,7 @@ function startSelect(startEvent = null) {
     marquee.hidden = true;
     if (boxing) {
       const rect = new DOMRect(Math.min(x0, e.clientX), Math.min(y0, e.clientY), Math.abs(e.clientX - x0), Math.abs(e.clientY - y0));
-      if (rect.width > 8 && rect.height > 8) picks.push({ kind: "box", rect, anchor: docAnchor(rect) });
+      if (rect.width > 8 && rect.height > 8) picks.push({ kind: "box", rect, anchor: boxAnchor(rect) });
     } else {
       const t = targetAt(e.clientX, e.clientY, { elementsOnly: true });
       if (t) picks.push({ kind: "el", t, anchor: t.anchor ? { node: t.anchor } : docAnchor(t.rect) });
@@ -1047,6 +1060,8 @@ function startSelect(startEvent = null) {
     pane.remove();
     endSelect();
     if (!picks.length) return;
+    // Boxes on a canvas app (Figma, Miro…) get a visual anchor that follows pan/zoom.
+    for (const p of picks) if (p.anchor.canvas) p.anchor = await visualAnchor(p.anchor.rect, p.anchor.canvas);
     const anchors = picks.map((p) => p.anchor);
     const rects = anchors.map(anchorRect);
     const svg = outlineSvg(rects);
@@ -1080,12 +1095,199 @@ function startSelect(startEvent = null) {
   }
 }
 
+
+// ---------------------------------------------------------------- staying on the content
+// Normal pages: a box is stored relative to the smallest element that contains it
+// (or to that element's scrolled content, if it's a scroll container), so inner
+// scrolling (Docs, Gmail, Notion…), browser zoom and reflow all carry it along.
+// Canvas apps (Figma, Miro…): nothing in the DOM moves when you pan or zoom, so
+// we keep a tiny greyscale thumbnail of the picked area ("visual anchor"). Plain
+// scrolling is followed live; zooms and drags fade the overlay out; once the
+// canvas settles we take one screenshot and find the thumbnail again.
+const isCanvasLike = (n) => n?.tagName === "CANVAS" && n.getBoundingClientRect().width * n.getBoundingClientRect().height > innerWidth * innerHeight * 0.25;
+const isScroller = (n) => { const cs = getComputedStyle(n); return /(auto|scroll)/.test(cs.overflowY + cs.overflowX) && (n.scrollHeight > n.clientHeight + 1 || n.scrollWidth > n.clientWidth + 1); };
+function boxAnchor(r) {
+  layer.style.display = "none";
+  let n = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  layer.style.display = "";
+  if (n && isCanvasLike(n)) return { canvas: n, rect: r };
+  // Boxes often overhang their container a little: prefer the nearest scroll
+  // container around the centre, else the nearest element holding most of the box.
+  const overlap = (b) => (Math.max(0, Math.min(b.right, r.right) - Math.max(b.left, r.left)) * Math.max(0, Math.min(b.bottom, r.bottom) - Math.max(b.top, r.top))) / (r.width * r.height || 1);
+  let holder = null;
+  for (let m = n; m && m !== document.body && m !== document.documentElement; m = m.parentElement) {
+    if (isScroller(m)) { holder = m; break; }
+    if (!holder && overlap(m.getBoundingClientRect()) >= 0.85) holder = m;
+  }
+  n = holder;
+  if (!n || n === document.body || n === document.documentElement) return docAnchor(r);
+  const b = n.getBoundingClientRect();
+  if (isScroller(n)) {
+    const z = n.offsetHeight ? b.height / n.offsetHeight : 1;
+    const W = n.scrollWidth * z, H = n.scrollHeight * z;
+    return { node: n, path: cssPath(n), scroll: true, frac: [(r.left - b.left + n.scrollLeft * z) / W, (r.top - b.top + n.scrollTop * z) / H, r.width / W, r.height / H] };
+  }
+  return { node: n, path: cssPath(n), frac: [(r.left - b.left) / b.width, (r.top - b.top) / b.height, r.width / b.width, r.height / b.height] };
+}
+
+/** Greyscale screenshot of the viewport at `k` × CSS px (our UI hidden). */
+async function grabGray(k) {
+  layer.style.visibility = "hidden";
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  let res;
+  try {
+    res = await chrome.runtime.sendMessage({ type: "capture" });
+  } finally {
+    layer.style.visibility = "";
+  }
+  if (!res?.dataUrl) throw new Error(res?.error || "no screenshot");
+  const img = new Image();
+  img.src = res.dataUrl;
+  await img.decode();
+  const w = Math.max(1, Math.round(innerWidth * k)), h = Math.max(1, Math.round(innerHeight * k));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.drawImage(img, 0, 0, w, h);
+  const px = g.getImageData(0, 0, w, h).data;
+  const data = new Uint8Array(w * h);
+  for (let i = 0; i < data.length; i++) data[i] = (px[i * 4] * 77 + px[i * 4 + 1] * 150 + px[i * 4 + 2] * 29) >> 8;
+  return { w, h, data };
+}
+
+const visuals = new Set();
+function trackVisual(a) { visuals.add(a); }
+async function visualAnchor(rect, canvas) {
+  // Whole-canvas picks don't need tracking: the canvas itself is the anchor.
+  if (rect.width > innerWidth * 0.8 && rect.height > innerHeight * 0.8) return { node: canvas };
+  const k = Math.min(1, 56 / Math.max(rect.width, rect.height));
+  try {
+    const img = await grabGray(k);
+    const tpl = crop(img, rect.left * k, rect.top * k, rect.width * k, rect.height * k);
+    let mean = 0; for (const v of tpl.data) mean += v; mean /= tpl.data.length || 1;
+    let vari = 0; for (const v of tpl.data) vari += (v - mean) ** 2;
+    const a = { visual: 1, rect: new DOMRect(rect.left, rect.top, rect.width, rect.height), tpl, k, s: 1, ow: rect.width, oh: rect.height, lost: false, flat: vari / (tpl.data.length || 1) < 12 };
+    trackVisual(a);
+    return a;
+  } catch {
+    return docAnchor(rect);
+  }
+}
+
+let settleTimer = 0;
+let uncertain = false;
+function refreshOverlays() {
+  repositionPick();
+  requestAnimationFrame(positionPins);
+}
+function fade(on) { layer.classList.toggle("tracking", on); }
+/** Something moved the canvas in a way we can't predict: hide, then re-find after it settles. */
+function requestUncertain() {
+  if (!visuals.size) return;
+  uncertain = true;
+  fade(true);
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(settle, 350);
+}
+function requestVerify() {
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(settle, 350);
+}
+async function settle() {
+  const list = [...visuals].filter((a) => isLive(a));
+  const wasUncertain = uncertain;
+  uncertain = false;
+  if (!list.length) return fade(false);
+  try {
+    const kMax = Math.max(...list.map((a) => a.k));
+    const base = await grabGray(kMax);
+    for (const a of list) {
+      if (a.flat) { if (wasUncertain) a.lost = true; continue; } // nothing distinctive to look for
+      const img = Math.abs(a.k - kMax) < 1e-6 ? base : resizeGray(base, innerWidth * a.k, innerHeight * a.k);
+      const pad = 40 * a.k + Math.max(a.tpl.w, a.tpl.h) * 0.3 * a.s;
+      const hit = wasUncertain || a.lost
+        ? findTemplate(img, a.tpl, { scales: scaleRange(a.s, 0.3, 3.2, 24) })
+        : findTemplate(img, a.tpl, { scales: scaleRange(a.s, 0.94, 1.06, 3), window: { x0: a.rect.left * a.k - pad, y0: a.rect.top * a.k - pad, x1: a.rect.left * a.k + pad, y1: a.rect.top * a.k + pad } });
+      host.dataset.track = JSON.stringify({ hit, k: a.k, s0: a.s, uncertain: wasUncertain }); // for debugging/tests
+      if (hit && hit.score >= 0.62) {
+        a.rect = new DOMRect(hit.x / a.k, hit.y / a.k, hit.w / a.k, hit.h / a.k);
+        a.s = hit.s;
+        a.lost = false;
+      } else a.lost = true;
+    }
+  } catch {
+    /* screenshot failed (e.g. tab hidden): keep the prediction */
+  }
+  fade(false);
+  refreshOverlays();
+  updateLostChip();
+}
+// Only track anchors something still uses (the current pick, or a pin).
+function isLive(a) {
+  if (picked?.anchors?.includes(a)) return true;
+  for (const pin of pins) if (anchors.get(pin.anchorId)?.parts.includes(a)) return true;
+  visuals.delete(a);
+  return false;
+}
+function updateLostChip() {
+  if (!picked?.chip || !picked.anchors?.some((a) => a.visual)) return;
+  const lost = picked.anchors.every((a) => !a.visual || a.lost);
+  picked.chip.classList.toggle("lost", lost);
+  let note = picked.chip.querySelector(".lostnote");
+  if (lost && !note) picked.chip.prepend((note = el("span", { class: "lostnote", text: "Your selection is off-screen right now. It comes back when you scroll to it. ·" })));
+  if (!lost) note?.remove();
+}
+const onCanvas = (e) => {
+  if (!visuals.size || e.composedPath().includes(host)) return false;
+  const c = document.elementFromPoint(e.clientX, e.clientY);
+  return Boolean(c && isCanvasLike(c));
+};
+document.addEventListener(
+  "wheel",
+  (e) => {
+    if (!onCanvas(e)) return;
+    if (e.ctrlKey || e.metaKey) return requestUncertain(); // pinch / ctrl-wheel = zoom
+    // Plain wheel pans the canvas: follow it live, then double-check once it stops.
+    let dx = e.deltaMode === 1 ? e.deltaX * 16 : e.deltaX, dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
+    for (const a of visuals) if (!a.lost) a.rect = new DOMRect(a.rect.left - dx, a.rect.top - dy, a.rect.width, a.rect.height);
+    refreshOverlays();
+    requestVerify();
+  },
+  { capture: true, passive: true },
+);
+let dragOnCanvas = null;
+document.addEventListener("pointerdown", (e) => { if (onCanvas(e)) dragOnCanvas = { x: e.clientX, y: e.clientY }; }, true);
+document.addEventListener("pointermove", (e) => {
+  if (dragOnCanvas && e.buttons && (dragOnCanvas === "moved" || Math.hypot(e.clientX - dragOnCanvas.x, e.clientY - dragOnCanvas.y) > 4)) { dragOnCanvas = "moved"; requestUncertain(); }
+}, true);
+document.addEventListener("pointerup", () => { if (dragOnCanvas === "moved") requestUncertain(); dragOnCanvas = false; }, true);
+document.addEventListener("keydown", (e) => {
+  if (!visuals.size || typingIn(deepActiveElement())) return;
+  // zoom shortcuts (⌘/Ctrl +/−/0, Shift+0/1/2) and keyboard panning
+  if (((e.ctrlKey || e.metaKey) && /^(Equal|Minus|Digit0|NumpadAdd|NumpadSubtract)$/.test(e.code)) || (e.shiftKey && /^Digit[012]$/.test(e.code)) || /^Arrow/.test(e.code)) requestUncertain();
+}, true);
+addEventListener("resize", () => requestUncertain());
+
 // The pick is pinned to the page: each part remembers what it's attached to
 // (an element, or a spot in the document for a box) and its outline follows
 // it when you scroll, resize, or the layout shifts.
 const docAnchor = (r) => ({ doc: new DOMRect(r.left + scrollX, r.top + scrollY, r.width, r.height) });
 function anchorRect(a) {
+  if (a.visual) return a.lost ? new DOMRect(-9999, -9999, 0, 0) : a.rect;
   if (a.path && !a.node?.isConnected) a.node = safeQuery(a.path); // SPA re-render: find it again
+  if (a.frac && a.node?.isConnected) {
+    // A box stored as fractions of its container (of its scrolled content, if it scrolls).
+    const b = a.node.getBoundingClientRect();
+    const [fx, fy, fw, fh] = a.frac;
+    if (a.scroll) {
+      // scroll sizes are in the element's own units; zoom/transform scale its box on screen
+      const z = a.node.offsetHeight ? b.height / a.node.offsetHeight : 1;
+      const W = a.node.scrollWidth * z, H = a.node.scrollHeight * z, ox = b.left - a.node.scrollLeft * z, oy = b.top - a.node.scrollTop * z;
+      return new DOMRect(ox + fx * W, oy + fy * H, fw * W, fh * H);
+    }
+    return new DOMRect(b.left + fx * b.width, b.top + fy * b.height, fw * b.width, fh * b.height);
+  }
   if (a.node?.isConnected) return a.node.getBoundingClientRect();
   if (a.range?.startContainer?.isConnected) return a.range.getBoundingClientRect();
   if (a.doc) return new DOMRect(a.doc.x - scrollX, a.doc.y - scrollY, a.doc.width, a.doc.height);
@@ -1173,7 +1375,9 @@ async function reselectBox(rect) {
   chip.replaceChildren(spinner(), "Reading the new area…");
   try {
     const ctx = await regionCtx(boxPolygon(rect), rect);
-    const anchors = [docAnchor(rect)];
+    let a = boxAnchor(rect);
+    if (a.canvas) a = await visualAnchor(a.rect, a.canvas);
+    const anchors = [a];
     setAnchor(ctx, anchors);
     Object.assign(picked, { anchors, ctx, target: null });
     drawRects([rect]);
@@ -1237,12 +1441,22 @@ function safeQuery(path) {
 }
 /** Saveable form of an anchor part. */
 function serializePart(a) {
+  if (a.visual) return { visual: 1, tpl: packTemplate(a.tpl), k: a.k, s: a.s, rect: { x: a.rect.x, y: a.rect.y, w: a.rect.width, h: a.rect.height }, ow: a.ow, oh: a.oh };
+  if (a.frac) return { path: a.path || cssPath(a.node), frac: a.frac, scroll: a.scroll || 0, doc: (() => { const r = anchorRect(a); return { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height }; })() };
   const r = anchorRect(a);
   const doc = { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height };
   const el = a.node || (a.range ? a.range.commonAncestorContainer : null);
   return { path: el ? cssPath(el) : "", doc };
 }
 function restorePart(p) {
+  if (p.visual) {
+    // The canvas view is different after a reload: find it again before showing it.
+    const a = { visual: 1, tpl: unpackTemplate(p.tpl), k: p.k, s: p.s, ow: p.ow, oh: p.oh, rect: new DOMRect(p.rect.x, p.rect.y, p.rect.w, p.rect.h), lost: true, flat: false };
+    trackVisual(a);
+    requestUncertain();
+    return a;
+  }
+  if (p.frac) { const node = safeQuery(p.path); if (node) return { node, path: p.path, frac: p.frac, scroll: !!p.scroll }; }
   const node = safeQuery(p.path);
   return node ? { node, path: p.path } : { doc: new DOMRect(p.doc.x, p.doc.y, p.doc.width, p.doc.height), path: p.path };
 }

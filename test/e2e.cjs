@@ -18,7 +18,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const FIGMA_PAGE = `<!doctype html><html><head><title>Checkout flow – Figma</title></head><body style="margin:0;background:#E5E5E5">
 <div style="height:48px;background:#2C2C2C"></div><canvas id="c" width="1000" height="560" style="display:block"></canvas>
-<script>const g=document.getElementById('c').getContext('2d');g.fillStyle='#fff';g.fillRect(300,60,260,440);g.fillStyle='#3A6FD8';g.fillRect(330,420,200,44);g.fillStyle='#D9D4C9';g.fillRect(330,100,160,20);</script></body></html>`;
+<script>
+// A tiny pannable / zoomable "design canvas": nothing in the DOM moves, only pixels.
+const c=document.getElementById('c'), g=c.getContext('2d'); let ox=0, oy=0, z=1;
+function draw(){ g.setTransform(1,0,0,1,0,0); g.fillStyle='#E5E5E5'; g.fillRect(0,0,c.width,c.height); g.setTransform(z,0,0,z,ox,oy);
+  g.fillStyle='#fff'; g.fillRect(300,60,260,440); g.fillStyle='#3A6FD8'; g.fillRect(330,420,200,44); g.fillStyle='#D9D4C9'; g.fillRect(330,100,160,20);
+  g.fillStyle='#F4A6B8'; g.fillRect(340,150,90,90); g.fillStyle='#1B1A1F'; g.fillRect(450,160,80,12); g.fillRect(450,182,60,12); g.fillStyle='#9ED8C5'; g.beginPath(); g.arc(400,330,40,0,7); g.fill(); }
+draw();
+c.addEventListener('wheel', (e) => { e.preventDefault(); if (e.ctrlKey) { const f = Math.exp(-e.deltaY / 300); const r = c.getBoundingClientRect(); const px = e.clientX - r.left, py = e.clientY - r.top; ox = px - (px - ox) * f; oy = py - (py - oy) * f; z *= f; } else { ox -= e.deltaX; oy -= e.deltaY; } draw(); }, { passive: false });
+window.__view = () => ({ ox, oy, z });
+</script></body></html>`;
 const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 
 (async () => {
@@ -389,6 +398,31 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await page.keyboard.press("Escape");
   await page.evaluate(() => scrollTo(0, 0));
   console.log("✓ selection is pinned to the page: follows scroll, still a drop target");
+  // inside a scrolling panel (like Docs/Gmail): a box follows the panel's own scroll, and zoom
+  await page.locator("#scroller").scrollIntoViewIfNeeded();
+  const inb = await page.locator("#inner1").boundingBox();
+  await page.keyboard.press("Alt+Shift+KeyL");
+  await sleep(150);
+  await page.mouse.move(inb.x - 4, inb.y - 4);
+  await page.mouse.down();
+  await page.mouse.move(inb.x + 200, inb.y + inb.height + 4, { steps: 6 });
+  await page.mouse.up();
+  await sleep(500);
+  const sy0 = await outlineY();
+  await page.locator("#scroller").evaluate((n) => (n.scrollTop = 60));
+  await sleep(250);
+  const sy1 = await outlineY();
+  assert.ok(Math.abs(sy0 - 60 - sy1) < 2, `box follows the inner scroller (${sy0} → ${sy1})`);
+  await page.evaluate(() => (document.body.style.zoom = "1.25"));
+  await sleep(300);
+  const iz = await page.locator("#inner1").boundingBox();
+  const zr = await page.evaluate(() => { const r = document.querySelector("skill-pet-root").shadowRoot.querySelector("svg.pickline rect"); return { x: +r.getAttribute("x") + 3, y: +r.getAttribute("y") + 3 }; });
+  assert.ok(Math.abs(zr.x - (iz.x - 4)) < 8 && Math.abs(zr.y - (iz.y - 4)) < 8, `box survives zoom (${zr.x},${zr.y} vs ${iz.x},${iz.y})`);
+  await page.evaluate(() => (document.body.style.zoom = ""));
+  await page.locator("#scroller").evaluate((n) => (n.scrollTop = 0));
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => scrollTo(0, 0));
+  console.log("✓ boxes stay on content inside scrolling panels and through zoom");
 
   await sw.evaluate(() => chrome.storage.local.set({ squadCollapsed: false, squadMiniStyle: "pets" }));
   await sleep(300);
@@ -426,6 +460,54 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   assert.ok(Math.abs(fpin.x + 17 - 430) < 4 && Math.abs(fpin.y + 17 - 300) < 4, "Figma pin sits where the pet was dropped, in the frame");
   assert.equal(await fig.locator(".pin .pin-flag").innerText(), "Posted");
   await fig.screenshot({ path: SS + "13b-figma-pin.png" });
+  // ---- canvas pan/zoom: the pin and a box selection follow the content, not the screen
+  const pinBox = async () => fig.locator(".pin").first().boundingBox();
+  const p0 = await pinBox();
+  await fig.mouse.move(700, 400);
+  await fig.mouse.wheel(0, 120); // pan the canvas up 120px
+  await sleep(150);
+  const p1 = await pinBox();
+  assert.ok(Math.abs(p0.y - 120 - p1.y) < 3, `pin follows a canvas pan live (${p0.y} → ${p1.y})`);
+  await sleep(1200); // settle + re-find
+  const p2 = await pinBox();
+  assert.ok(Math.abs(p0.y - 120 - p2.y) < 6, `and stays after re-checking (${p2.y})`);
+  // box-select the pink square, then zoom the canvas around a point
+  await fig.keyboard.press("Alt+Shift+KeyL");
+  await sleep(150);
+  const sq = await fig.evaluate(() => { const v = window.__view(); const r = document.getElementById("c").getBoundingClientRect(); return { x: r.left + v.ox + 340 * v.z, y: r.top + v.oy + 150 * v.z, s: 90 * v.z }; });
+  await fig.mouse.move(sq.x - 6, sq.y - 6);
+  await fig.mouse.down();
+  await fig.mouse.move(sq.x + sq.s + 6, sq.y + sq.s + 6, { steps: 6 });
+  await fig.mouse.up();
+  await sleep(900);
+  const outline = () => fig.evaluate(() => { const r = document.querySelector("skill-pet-root").shadowRoot.querySelector("svg.pickline rect"); return { x: +r.getAttribute("x"), y: +r.getAttribute("y"), w: +r.getAttribute("width") }; });
+  const o0 = await outline();
+  await fig.screenshot({ path: SS + "13c-figma-box-before-zoom.png" });
+  await fig.keyboard.down("Control");
+  await fig.mouse.move(sq.x + sq.s / 2, sq.y + sq.s / 2);
+  for (let i = 0; i < 3; i++) await fig.mouse.wheel(0, -40);
+  await fig.keyboard.up("Control");
+  await sleep(150);
+  assert.ok(await fig.evaluate(() => document.querySelector("skill-pet-root").shadowRoot.querySelector(".layer").classList.contains("tracking")), "overlays fade while zooming");
+  await sleep(1500);
+  const o1 = await outline();
+  const exp = await fig.evaluate(() => { const v = window.__view(); const r = document.getElementById("c").getBoundingClientRect(); return { x: r.left + v.ox + 340 * v.z, y: r.top + v.oy + 150 * v.z, s: 90 * v.z }; });
+  await fig.screenshot({ path: SS + "13d-figma-box-after-zoom.png" });
+  assert.ok(Math.abs(o1.x + 3 - (exp.x - 6)) < 10 && Math.abs(o1.y + 3 - (exp.y - 6)) < 10, `re-found after zoom: outline ${o1.x},${o1.y} vs square ${exp.x},${exp.y}`);
+  assert.ok(o1.w > o0.w * 1.2, `and scaled with it (${o0.w} → ${o1.w})`);
+  // pan it far off-screen: the outline hides and the chip says where it went
+  await fig.mouse.move(700, 400);
+  for (let i = 0; i < 6; i++) await fig.mouse.wheel(0, 300);
+  await sleep(1600);
+  const o2 = await outline();
+  assert.ok(o2.x < -1000, "off-screen selection is hidden, not left floating");
+  assert.match(await fig.getByRole("status").filter({ hasText: "Selected" }).innerText(), /off-screen/);
+  for (let i = 0; i < 6; i++) await fig.mouse.wheel(0, -300);
+  await sleep(1600);
+  const o3 = await outline();
+  assert.ok(Math.abs(o3.x - o1.x) < 8 && Math.abs(o3.y - o1.y) < 8, `and comes back when you scroll back (${o3.x},${o3.y})`);
+  await fig.keyboard.press("Escape");
+  console.log("✓ canvas apps: pin + selection follow pan live, fade during zoom, re-found at the new zoom, hide off-screen and return");
   console.log("✓ Figma frame → approve → comment posted to node 12:34");
 
   // ---- 6) Skill Studio
