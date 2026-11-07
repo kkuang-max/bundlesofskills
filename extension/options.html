@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Skill Pet options</title>
+<title>Settings · Bundles of Skills</title>
+<link rel="icon" href="brand/icon-32.png">
 <style>
   body{font:14px/1.5 system-ui,-apple-system,sans-serif;max-width:560px;margin:40px auto;padding:0 16px;color:#1B1A1F;background:#F5F3EE}
   h1{font-size:22px} label{display:block;margin:18px 0 6px;font-weight:600}
@@ -13,7 +14,7 @@
 </style>
 </head>
 <body>
-<h1>Skill Pet</h1>
+<h1 style="display:flex;align-items:center;gap:14px;margin:0 0 8px"><img src="brand/logo.png" alt="Bundles of Skills" style="height:72px;width:auto"><span style="font-size:20px;color:#5E5B66;font-weight:600">Settings</span></h1>
 <p><a href="studio.html"><b>Open Skill Studio →</b></a> <small>(make skills, stickers and pets)</small></p>
 <p><small>Your key is stored only in this browser profile (<code>chrome.storage.local</code>) and sent only to openrouter.ai (and the Figma token only to api.figma.com). MVP only: a real release would go through a backend.</small></p>
 
@@ -36,6 +37,7 @@
 <input id="figmaToken" type="password" autocomplete="off" placeholder="figd_…">
 <small>Lets pets read a selected Figma frame crisply and post approved comments on it. Make one in Figma › Settings › Security › Personal access tokens (file read + comments write). Without it, pets work from a screenshot.</small>
 
+<div class="row"><input id="securityGuard" type="checkbox"><label for="securityGuard"><b>Security guard</b>: check what a pet is about to send for secrets, personal data and hidden instructions, and check results before they're applied. Runs on this device.</label></div>
 <div class="row"><input id="squadVisible" type="checkbox"><label for="squadVisible">Show the pet squad on pages</label></div>
 <div class="row" style="margin-top:8px"><input id="squadCollapsed" type="checkbox"><label for="squadCollapsed">Keep the squad minimized (it opens when you hover, select text or lasso)</label></div>
 <div class="row" style="margin-top:8px"><input id="pinsEnabled" type="checkbox"><label for="pinsEnabled">Leave pets where they worked (pins you can click to reopen answers)</label></div>

@@ -77,7 +77,7 @@ test("stored libraries are cleaned up", () => {
   const n = normalizeLibrary({ skills: [{ id: "a", name: "A", prompt: "p", accepts: ["text", "bogus"] }], pets: [{ id: "x", name: "X", skillIds: ["a", "gone"] }] });
   assert.deepEqual(n.skills[0].accepts, ["text"]);
   assert.deepEqual(n.pets[0].skillIds, ["a"]);
-  assert.equal(normalizeLibrary(null).pets.length, 4);
+  assert.equal(normalizeLibrary(null).pets.length, 5); // Scout, Quill, Pixel, Sprout, Security
 });
 
 test("pet markup refuses non-colour values", () => {

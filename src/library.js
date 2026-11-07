@@ -98,24 +98,41 @@ export const TEMPLATES = [
   // ---- school
   t("quiz", "Quiz me", "Quiz", "#FFD86B", "square", ["text", "image"], "answer",
     "Write 4 short quiz questions that test understanding of this content, numbered 1–4. Do not hint at the answers. Then output a line containing exactly === ANSWERS === and, after it, the numbered answers, one per line, each with a one-sentence explanation.", { apps: ["wiki", "docs"] }),
+  // ---- security & ethics (Security, the guard pet). The first two never leave the
+  // device: they run locally in the service worker (see security.js).
+  t("scan-injection", "Check for hidden instructions", "Inj", "#A9C1F2", "square", ["text", "editable"], "answer",
+    "On-device check: find text that tries to give an AI orders (prompt injection) or hides invisible characters. Runs locally; nothing is sent to the model.", {}, "injection"),
+  t("scan-sensitive", "Spot sensitive data", "PII", "#F4A6B8", "square", ["text", "editable"], "answer",
+    "On-device check: list secrets (API keys, tokens, passwords) and personal data (emails, phone, card and ID numbers) before you share this anywhere. Runs locally; nothing is sent to the model.", { signal: "secrets" }, "sensitive"),
+  t("bias-review", "Review for bias & harm", "Fair", "#9ED8C5", "blob", ["text", "editable", "image"], "answer",
+    "Review this content for biased, exclusionary, stereotyping or potentially harmful wording or imagery. List each issue with who it could affect and a neutral alternative. If there are none, say so in one line.", {}),
+  t("check-ai", "Check AI output", "Check", "#FFD86B", "circle", ["text", "editable"], "answer",
+    "This may be AI-generated text. List the claims a careful reader should verify, any signs of fabrication (made-up citations, numbers, quotes, links), and overconfident statements. Rate overall reliability as Low, Medium or High with one line of reasoning.", {}),
+  t("scam-check", "Is this a scam?", "Scam", "#FFB86B", "blob", ["text", "image"], "answer",
+    "Assess whether this message or page is phishing, a scam or social engineering. List the warning signs you see (urgency, mismatched sender or links, requests for credentials, payment or secrecy) and give a verdict: Likely safe, Suspicious, or Likely scam, plus what the user should do next.", { apps: ["mail"] }),
   t("flashcards", "Make flashcards", "Cards", "#9ED8C5", "blob", ["text", "image"], "answer",
     "Turn the key ideas into up to 6 flashcards. First list only the fronts (questions or terms), numbered. Then output a line containing exactly === ANSWERS === and, after it, the matching backs, numbered the same way, one per line.", { apps: ["wiki"] }),
 ];
 
-function t(id, name, label, color, shape, accepts, action, prompt, boost) {
-  return { id, name, prompt, accepts, action, sticker: { label, color, shape }, boost, template: true };
+function t(id, name, label, color, shape, accepts, action, prompt, boost, local) {
+  return { id, name, prompt, accepts, action, sticker: { label, color, shape }, boost, template: true, ...(local ? { local } : {}) };
 }
+
+/** Security, the guard pet: AI safety & ethics. Added to older libraries once (see normalizeLibrary). */
+export const SECURITY_PET = { id: "security", name: "Security", role: "Safety & ethics", species: "hedgehog", color: "#B9D3EE", skillIds: ["scan-injection", "scan-sensitive", "bias-review", "check-ai", "scam-check"], canRead: { text: true, images: true }, apps: ["mail"] };
+const SECURITY_SKILLS = SECURITY_PET.skillIds;
 
 export const DEFAULT_PETS = [
   { id: "scout", name: "Scout", role: "Research", species: "dog", color: "#A8DCC1", skillIds: ["summarize", "explain", "cite", "dates", "translate"], canRead: { text: true, images: true }, apps: ["wiki", "web"] },
   { id: "quill", name: "Quill", role: "Writing", species: "bird", color: "#CBBEF5", skillIds: ["fix-grammar", "tighten", "soften", "rewrite-ask", "draft-reply", "action-items"], canRead: { text: true, images: false }, apps: ["docs", "mail"] },
   { id: "pixel", name: "Pixel", role: "Design", species: "cat", color: "#F8BE8E", skillIds: ["critique", "critique-comment", "microcopy", "a11y", "name-layers", "describe-image"], canRead: { text: false, images: true }, apps: ["figma"] },
   { id: "sprout", name: "Sprout", role: "School", species: "frog", color: "#F3DE85", skillIds: ["quiz", "flashcards", "explain", "summarize"], canRead: { text: true, images: true }, apps: [] },
+  SECURITY_PET,
 ];
 
 /** A fresh library: every template, the default squad. */
 export function defaultLibrary() {
-  return { version: 1, skills: TEMPLATES.map((s) => structuredClone(s)), pets: structuredClone(DEFAULT_PETS) };
+  return { version: 1, skills: TEMPLATES.map((s) => structuredClone(s)), pets: structuredClone(DEFAULT_PETS), features: ["security"] };
 }
 
 /** Accept whatever is in storage, fill gaps, drop dangling references. */
@@ -143,6 +160,16 @@ function upgradeTemplate(s) {
 
 export function normalizeLibrary(stored) {
   if (!stored || !Array.isArray(stored.skills) || !Array.isArray(stored.pets)) return defaultLibrary();
+  // Libraries saved before Security existed get the guard pet and its skills, once.
+  // After that, releasing Security or deleting its skills sticks.
+  const features = Array.isArray(stored.features) ? [...stored.features] : [];
+  if (!features.includes("security")) {
+    features.push("security");
+    const have = new Set(stored.skills.map((s) => s?.id));
+    const add = TEMPLATES.filter((s) => SECURITY_SKILLS.includes(s.id) && !have.has(s.id)).map((s) => structuredClone(s));
+    const pets = stored.pets.some((p) => p?.id === SECURITY_PET.id) ? stored.pets : [...stored.pets, structuredClone(SECURITY_PET)];
+    stored = { ...stored, skills: [...stored.skills, ...add], pets };
+  }
   const skills = stored.skills.filter((s) => s && s.id && s.name && s.prompt).map(upgradeTemplate).map((s) => ({
     ...s,
     accepts: (s.accepts || ["text"]).filter((k) => KINDS.includes(k)),
@@ -158,7 +185,7 @@ export function normalizeLibrary(stored) {
     canRead: { text: true, images: true, ...(p.canRead || {}) },
     skillIds: (p.skillIds || []).filter((id) => ids.has(id)),
   }));
-  return { version: 1, skills, pets };
+  return { version: 1, skills, pets, features };
 }
 
 // ---------- where are we? ------------------------------------------------------
@@ -203,6 +230,7 @@ const SIGNALS = {
   dates: /\b(\d{1,2}[/.-]\d{1,2}([/.-]\d{2,4})?|(mon|tues|wednes|thurs|fri|satur|sun)day|tomorrow|next week|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d{1,2})\b/i,
   code: /[{};]\s*$|=>|\bfunction\b|\bdef\b|\bconst\b|\breturn\b/m,
   nonLatin: /[^\u0000-ɏ\s\d\p{P}\p{S}]/u,
+  secrets: /\b(?:sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|password\s*[:=])|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/i,
 };
 
 /** Can this skill work on this context at all? */
@@ -298,7 +326,9 @@ export function buildRequest(ctx, { skill, instruction, pet = null, request = ""
 
   const where = `${ctx.app === "web" ? "Web page" : ctx.app}: ${ctx.title || "(untitled)"} — ${ctx.host}`;
   const what = ctx.label ? `\nPicked: ${ctx.label}` : "";
-  const text = allowText && ctx.text ? `\n\n<picked_content>\n${ctx.text}\n</picked_content>` : "";
+  // Content can't close (or reopen) the wrapper: any tag lookalike inside it is neutralised.
+  const fenced = String(ctx.text || "").replace(/<(\/?)\s*picked_content\s*>/gi, "‹$1picked_content›");
+  const text = allowText && ctx.text ? `\n\n<picked_content>\n${fenced}\n</picked_content>` : "";
   const imgs = allowImages ? ctx.images || [] : [];
   const imgNote = imgs.length ? `\n\n(${imgs.length} image${imgs.length > 1 ? "s" : ""} of the picked area attached.)` : "";
   const empty = !text && !imgs.length ? "\n\n<picked_content>(nothing readable picked)</picked_content>" : "";
