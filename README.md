@@ -4,9 +4,13 @@
 
 A Chrome extension prototype of the **Skill Companion** concepts. You keep a **squad of pets**, each one a group of AI skills with its own permissions. **Drag a pet onto your work** (a paragraph, a text field, an image, a Google Docs page, a Figma frame) and it offers only the skills that fit what's there. Anything that would change your work is a **proposal you approve** first. Models are called through **[OpenRouter](https://openrouter.ai)**.
 
+![Scout summarizing a picked paragraph on Wikipedia](docs/screenshots/summarize-on-page.png)
+
 ## The pieces
 
 ### 1. Skill Studio: make skills, stickers and pets
+
+![Skill Studio Pets tab showing Scout and its skills](docs/screenshots/studio-pets.png)
 
 Open it from the extension's toolbar icon, or from Options. Three tabs sit next to **Import · Export · Settings · + New skill**:
 
@@ -23,6 +27,12 @@ Open it from the extension's toolbar icon, or from Options. Three tabs sit next 
 - **The skill editor:** instruction, works-on, result, ranking, which pets know it, a sticker designer (label, color, shape), and **Try it** with text or an image.
 
 The look follows the design mockups: cool grey background, white rounded cards, indigo accent, the *M PLUS Rounded 1c* typeface, pill tags, and green labels for actions that change things.
+
+![All skills view with template cards](docs/screenshots/studio-all-skills.png)
+
+![The new skill editor with sticker designer](docs/screenshots/skill-editor.png)
+
+![Studio History with a quiz and a summary made on a Figma file](docs/screenshots/studio-history.png)
 
 ### Characters
 
@@ -70,6 +80,8 @@ The detection code is `src/security.js`: pure functions, no network, unit-tested
 
 The dock is frosted glass (blurred and tinted over whatever page is behind it, with a soft highlight edge), so it looks the same on every tab without hiding the page.
 
+![The squad dock with Scout, Quill, Pixel, Sprout and Security](docs/screenshots/squad-dock.png)
+
 | Do this | What happens |
 |---|---|
 | **Drag a pet** onto something | A dashed outline shows what it will read ("Text", "Image", "Text field", "Selected Figma frame", "This page (screenshot)"). Drop, and the **pet card** opens with that pet's skills that fit, plus an *Ask Quill…* box. |
@@ -81,6 +93,8 @@ The dock is frosted glass (blurred and tinted over whatever page is behind it, w
 | **Alt+Shift+S** / **Alt+Shift+R** | Show/hide the squad · rerun the last skill on the current pick. |
 
 ### Minimized squad, hover cards, shortcuts
+
+![Hovering Scout shows its skills](docs/screenshots/dock-hover-card.png)
 
 - **Minimize** (the – at the end of the bar, or in Options) shrinks the squad to **small pets** or **dots** (pick in Options). It expands on its own while you **hover** it, **select text**, use **Select**, have a **pick**, **drag** a pet, or use a pet's card. Then it shrinks back.
 - **Hover a pet** to see what it can do: its skills with stickers, which ones rewrite or comment (after you approve), what it may read, and its shortcut. If you have selected something, skills that don't fit it are dimmed ("For your pick: 3 fit").
@@ -97,6 +111,8 @@ The dock is frosted glass (blurred and tinted over whatever page is behind it, w
 | **Alt+Shift+P / H / S / R** | Search · History · show/hide squad · rerun last |
 
 ### Markdown answers
+
+![A Markdown answer card from Scout's Summarize](docs/screenshots/answer-card.png)
 
 Answers render as formatted Markdown: headings, **bold**, *italic*, `code`, code blocks, bullet and numbered lists (nested), checklists, quotes, tables and links. The renderer builds page elements directly, so model text is never inserted as HTML, and links only work if they're http(s) or mailto. The prompt asks for Markdown when it helps scanning; rewrites and Figma comments stay plain text, because they go straight into your document. **Copy** puts rich text on the clipboard, so pasting into Docs or Gmail keeps the formatting, and plain-text apps get the Markdown.
 
@@ -138,6 +154,8 @@ Selections and stickers stay with the content rather than the screen:
   - If the spot is panned off-screen, the outline hides and the sticker card says so. It reappears when you pan back.
 
 ### 3. History and loading
+
+![The on-page History panel over a Figma file](docs/screenshots/figma-history-panel.png)
 
 - **Every generation is logged**, from pages and from the Studio's *Try it*. Each entry records the skill, the pet, the site, what it read, the output, and what happened next: *Generated*, *Approved & applied* (including your edits before approving), *Posted to Figma*, *Discarded*, *Stopped* or *Failed*.
   - **On a page:** the dock's **History** button opens a panel showing what was generated **on this site**. Switch to *Everywhere*, search, copy. Use **Show on page** to jump to where an answer was made.
