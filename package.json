@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MVP: a pet companion that runs AI skills (via OpenRouter) on whatever you select in the browser.",
+  "description": "MVP: a pet companion that runs AI skills (Claude, via the Anthropic API) on whatever you select in the browser.",
   "scripts": {
     "build": "node build.mjs",
     "test": "node --test test/*.test.js",
@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.12"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0"
   }
 }

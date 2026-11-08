@@ -65,7 +65,7 @@ test("requests carry text and images, minus what the pet may not read", () => {
   const all = buildRequest(c, { skill });
   assert.equal(all.content.length, 2);
   assert.match(all.content[0].text, /<picked_content>\nhello/);
-  assert.equal(all.content[1].image_url.url, "data:image/jpeg;base64,AAA");
+  assert.deepEqual(all.content[1], { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAA" } });
   const quill = lib.pets.find((p) => p.id === "quill"); // can't read images
   assert.equal(buildRequest(c, { skill, pet: quill }).content.length, 1);
   const rw = buildRequest(ctx({ kinds: ["editable"], text: "x" }), { skill: lib.skills.find((s) => s.id === "rewrite-ask"), request: "more formal" });

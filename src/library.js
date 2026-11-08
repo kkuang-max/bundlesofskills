@@ -305,7 +305,7 @@ export function petsWithSkill(lib, skillId) {
 /**
  * Build the chat request for one run. Images only go along if the pet may read
  * them; text likewise. `request` fills {{request}} for "…as I ask" skills.
- * Returns {system, content} with OpenAI-style content parts.
+ * Returns {system, content} with Messages API content blocks (text, then images).
  */
 export function buildRequest(ctx, { skill, instruction, pet = null, request = "" }) {
   let task = skill ? skill.prompt : instruction;
@@ -334,8 +334,15 @@ export function buildRequest(ctx, { skill, instruction, pet = null, request = ""
   const empty = !text && !imgs.length ? "\n\n<picked_content>(nothing readable picked)</picked_content>" : "";
 
   const content = [{ type: "text", text: `${where}${what}${text}${imgNote}${empty}\n\nSkill: ${task}` }];
-  for (const url of imgs) content.push({ type: "image_url", image_url: { url } });
+  for (const url of imgs) content.push(imageBlock(url));
   return { system, content, action, label: skill ? skill.name : instruction };
+}
+
+/** A data: URL or https URL → a Messages API image block. */
+export function imageBlock(url) {
+  const m = /^data:(image\/[a-z+.-]+);base64,(.*)$/i.exec(url || "");
+  if (m) return { type: "image", source: { type: "base64", media_type: m[1].toLowerCase(), data: m[2] } };
+  return { type: "image", source: { type: "url", url } };
 }
 
 /** Ray-casting point-in-polygon, for the lasso. */

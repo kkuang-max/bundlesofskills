@@ -1,7 +1,7 @@
-// MV3 service worker. Owns the keys (OpenRouter, optional Figma token) and every
+// MV3 service worker. Owns the keys (Anthropic, optional Figma token) and every
 // network call; the page only ever gets results back. Also: hotkeys, tab
 // screenshots for canvas apps / lasso / images, and the Figma REST calls.
-import { DEFAULTS, streamChat } from "./openrouter.js";
+import { API_HOST, DEFAULTS, MODELS, streamChat } from "./anthropic.js";
 import { buildRequest, normalizeLibrary } from "./library.js";
 import { figmaComment, figmaFrame } from "./figma.js";
 import { addEntry, makeEntry, mutateHistory, updateEntry } from "./history.js";
@@ -11,7 +11,10 @@ import { defang, redact, report, scanOutput, scanText, summarize } from "./secur
 mutateHistory((h) => h.map((e) => (e.status === "running" ? { ...e, status: "stopped" } : e)));
 
 async function settings() {
-  return chrome.storage.local.get({ apiKey: "", model: DEFAULTS.model, effort: DEFAULTS.effort, figmaToken: "" });
+  const s = await chrome.storage.local.get({ anthropicKey: "", model: DEFAULTS.model, effort: DEFAULTS.effort, figmaToken: "" });
+  // Older versions stored OpenRouter model ids ("anthropic/claude-…"): use the default instead.
+  const model = MODELS.some((m) => m.id === s.model) || /^claude-[a-z0-9-]+$/.test(s.model) ? s.model : DEFAULTS.model;
+  return { ...s, apiKey: s.anthropicKey, model };
 }
 async function library() {
   const { library } = await chrome.storage.local.get("library");
@@ -127,14 +130,14 @@ chrome.runtime.onConnect.addListener((port) => {
     }
 
     if (!apiKey) {
-      post({ type: "error", code: "no-key", message: "Add your OpenRouter API key in the extension options first." });
+      post({ type: "error", code: "no-key", message: "Add your Anthropic API key in the extension options first." });
       return;
     }
 
     // The Security guard: check what's about to leave the browser. Runs here, in the
     // service worker, so no page script can skip it.
     let context = msg.context || {};
-    const security = { sentTo: "openrouter.ai", guard: Boolean(securityGuard) };
+    const security = { sentTo: API_HOST, guard: Boolean(securityGuard) };
     if (securityGuard && context.text) {
       const findings = scanText(context.text);
       if (findings.length) {

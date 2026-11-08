@@ -2088,7 +2088,7 @@ let tickTimer = 0;
 function loader(pet, ctx, verb, onDevice = false) {
   const n = (ctx.images || []).length;
   const what = [ctx.text ? `${ctx.text.trim().split(/\s+/).length} words` : "", n ? `${n} image${n > 1 ? "s" : ""}` : ""].filter(Boolean).join(" + ") || "your request";
-  const where = onDevice ? "Checking on this device. Nothing is sent anywhere." : `Sending ${what} to the model (openrouter.ai)${prefs.securityGuard !== false ? ", after a Security check" : ""}`;
+  const where = onDevice ? "Checking on this device. Nothing is sent anywhere." : `Sending ${what} to Claude (api.anthropic.com)${prefs.securityGuard !== false ? ", after a Security check" : ""}`;
   return el("div", { class: "loading", role: "status", "aria-live": "polite" }, [
     el("div", { class: "ld-top" }, [
       el("span", { class: "ld-pet", html: petSvg(pet || "#FFB86B", 40, true) }),

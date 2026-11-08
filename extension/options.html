@@ -16,19 +16,18 @@
 <body>
 <h1 style="display:flex;align-items:center;gap:14px;margin:0 0 8px"><img src="brand/logo.png" alt="Bundles of Skills" style="height:72px;width:auto"><span style="font-size:20px;color:#5E5B66;font-weight:600">Settings</span></h1>
 <p><a href="studio.html"><b>Open Skill Studio →</b></a> <small>(make skills, stickers and pets)</small></p>
-<p><small>Your key is stored only in this browser profile (<code>chrome.storage.local</code>) and sent only to openrouter.ai (and the Figma token only to api.figma.com). MVP only: a real release would go through a backend.</small></p>
+<p><small>Your key is stored only in this browser profile (<code>chrome.storage.local</code>) and sent only to api.anthropic.com (and the Figma token only to api.figma.com). MVP only: a real release would go through a backend.</small></p>
 
-<label for="apiKey">OpenRouter API key</label>
-<input id="apiKey" type="password" autocomplete="off" placeholder="sk-or-v1-…">
-<small>Create one at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.</small>
+<label for="apiKey">Anthropic API key</label>
+<input id="apiKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+<small>Create one in the Claude Console at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com/settings/keys</a>.</small>
 
 <label for="model">Model</label>
-<input id="model" type="text" spellcheck="false">
-<small>Any id from <a href="https://openrouter.ai/models" target="_blank" rel="noopener">openrouter.ai/models</a>, e.g. <code>anthropic/claude-opus-5.5</code>, <code>anthropic/claude-haiku-4.5</code>.</small>
+<select id="model"></select>
 
-<label for="effort">Reasoning effort</label>
+<label for="effort">Effort</label>
 <select id="effort">
-  <option value="low">low (fastest, fine for quick skills; ignored by non-reasoning models)</option>
+  <option value="low">low (fastest, fine for quick skills)</option>
   <option value="medium">medium</option>
   <option value="high">high</option>
 </select>
